@@ -1,0 +1,91 @@
+import Foundation
+import Virtualization
+
+public enum VMConfigurationFactory {
+    public static func writeNewMachineIdentifier(to directory: URL, system: GuestSystem) throws {
+        if system == .macOS {
+            try VZMacMachineIdentifier().dataRepresentation.write(to: directory.appendingPathComponent("MachineIdentifier"), options: .atomic)
+        }
+    }
+
+    public static func prepareMac(at directory: URL, restoreImage: VZMacOSRestoreImage) throws {
+        guard let requirements = restoreImage.mostFeaturefulSupportedConfiguration else {
+            throw VMError.message("This macOS image is not supported by this Mac. Choose a compatible IPSW or download from Apple.")
+        }
+        var record = try VirtualMachineRecord.load(from: directory)
+        guard record.cpuCount >= requirements.minimumSupportedCPUCount,
+              UInt64(record.memoryGB) * VMStorage.gib >= requirements.minimumSupportedMemorySize else {
+            throw VMError.message("This macOS version needs at least \(requirements.minimumSupportedCPUCount) CPUs and \(requirements.minimumSupportedMemorySize / VMStorage.gib) GB of memory.")
+        }
+        record.osVersion = "macOS \(restoreImage.operatingSystemVersion.majorVersion).\(restoreImage.operatingSystemVersion.minorVersion).\(restoreImage.operatingSystemVersion.patchVersion)"
+        try requirements.hardwareModel.dataRepresentation.write(to: directory.appendingPathComponent("HardwareModel"), options: .atomic)
+        try writeNewMachineIdentifier(to: directory, system: .macOS)
+        _ = try VZMacAuxiliaryStorage(creatingStorageAt: directory.appendingPathComponent("AuxiliaryStorage"), hardwareModel: requirements.hardwareModel, options: [])
+        try record.save(to: directory)
+    }
+
+    public static func prepareLinux(at directory: URL) throws {
+        _ = try VZEFIVariableStore(creatingVariableStoreAt: directory.appendingPathComponent("EFI.nvram"))
+    }
+
+    public static func make(record: VirtualMachineRecord, directory: URL) throws -> VZVirtualMachineConfiguration {
+        guard VZVirtualMachine.isSupported else { throw VMError.message("Virtualization is not available on this Mac.") }
+        try VMStorage.validate(record)
+        let configuration = VZVirtualMachineConfiguration()
+        configuration.cpuCount = record.cpuCount
+        configuration.memorySize = UInt64(record.memoryGB) * VMStorage.gib
+
+        if record.system == .macOS {
+            let platform = VZMacPlatformConfiguration()
+            guard let model = VZMacHardwareModel(dataRepresentation: try Data(contentsOf: directory.appendingPathComponent("HardwareModel"))), model.isSupported,
+                  let identifier = VZMacMachineIdentifier(dataRepresentation: try Data(contentsOf: directory.appendingPathComponent("MachineIdentifier"))) else {
+                throw VMError.message("This machine’s virtual hardware is not supported by this Mac.")
+            }
+            platform.hardwareModel = model; platform.machineIdentifier = identifier
+            platform.auxiliaryStorage = VZMacAuxiliaryStorage(contentsOf: directory.appendingPathComponent("AuxiliaryStorage"))
+            configuration.platform = platform
+            configuration.bootLoader = VZMacOSBootLoader()
+            let graphics = VZMacGraphicsDeviceConfiguration()
+            graphics.displays = [VZMacGraphicsDisplayConfiguration(widthInPixels: 1920, heightInPixels: 1200, pixelsPerInch: 144)]
+            configuration.graphicsDevices = [graphics]
+            configuration.keyboards = [VZMacKeyboardConfiguration()]
+            configuration.pointingDevices = [VZMacTrackpadConfiguration()]
+        } else {
+            configuration.platform = VZGenericPlatformConfiguration()
+            let bootLoader = VZEFIBootLoader()
+            bootLoader.variableStore = VZEFIVariableStore(url: directory.appendingPathComponent("EFI.nvram"))
+            configuration.bootLoader = bootLoader
+            let graphics = VZVirtioGraphicsDeviceConfiguration()
+            graphics.scanouts = [VZVirtioGraphicsScanoutConfiguration(widthInPixels: 1920, heightInPixels: 1200)]
+            configuration.graphicsDevices = [graphics]
+            configuration.keyboards = [VZUSBKeyboardConfiguration()]
+            configuration.pointingDevices = [VZUSBScreenCoordinatePointingDeviceConfiguration()]
+            configuration.entropyDevices = [VZVirtioEntropyDeviceConfiguration()]
+            configuration.memoryBalloonDevices = [VZVirtioTraditionalMemoryBalloonDeviceConfiguration()]
+        }
+
+        let diskAttachment = try VZDiskImageStorageDeviceAttachment(url: directory.appendingPathComponent("Disk.img"), readOnly: false, cachingMode: .automatic, synchronizationMode: .full)
+        let disk = VZVirtioBlockDeviceConfiguration(attachment: diskAttachment)
+        configuration.storageDevices = [disk]
+        if record.system == .linux && record.bootFromInstaller {
+            let iso = directory.appendingPathComponent("Installer.iso")
+            guard FileManager.default.fileExists(atPath: iso.path) else { throw VMError.message("The installer ISO is missing. Turn off ‘Boot from installer’ in machine settings to boot the disk.") }
+            let attachment = try VZDiskImageStorageDeviceAttachment(url: iso, readOnly: true)
+            configuration.storageDevices.insert(VZUSBMassStorageDeviceConfiguration(attachment: attachment), at: 0)
+        }
+        if record.networkEnabled {
+            let network = VZVirtioNetworkDeviceConfiguration()
+            network.attachment = VZNATNetworkDeviceAttachment()
+            guard let address = VZMACAddress(string: record.macAddress) else { throw VMError.message("Invalid network address in this machine’s configuration.") }
+            network.macAddress = address
+            configuration.networkDevices = [network]
+        }
+        let sound = VZVirtioSoundDeviceConfiguration()
+        let output = VZVirtioSoundDeviceOutputStreamConfiguration()
+        output.sink = VZHostAudioOutputStreamSink()
+        sound.streams = [output]
+        configuration.audioDevices = [sound]
+        try configuration.validate()
+        return configuration
+    }
+}

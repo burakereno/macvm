@@ -1,0 +1,13 @@
+.build/
+dist/
+.DS_Store
+*.dmg
+*.zip
+*.p12
+*.cer
+*.keychain-db
+*.ipsw
+*.iso
+*.macvm/
+.swiftpm/
+.local/

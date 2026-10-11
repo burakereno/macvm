@@ -1,0 +1,121 @@
+name: Release MacVM
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (for example 0.1.0); leave empty to increment the latest patch'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+concurrency:
+  group: macvm-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate contract, secrets, and version
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          source .github/release-contract.env
+          [[ "$GITHUB_REPOSITORY" == "$GITHUB_OWNER/$GITHUB_REPO" ]]
+          [[ "$APPLE_TEAM_ID" == "$TEAM_IDENTIFIER" && "$TEAM_IDENTIFIER" == "66K3EFBVB6" ]]
+          for key in MACOS_CERTIFICATE_P12_BASE64 MACOS_CERTIFICATE_PASSWORD KEYCHAIN_PASSWORD APPLE_ID APPLE_TEAM_ID APPLE_APP_SPECIFIC_PASSWORD; do
+            [[ -n "${!key}" ]] || { echo "Missing secret: $key"; exit 1; }
+          done
+          VERSION="$REQUESTED_VERSION"
+          if [[ -z "$VERSION" ]]; then
+            LATEST="$(git tag --list 'v*' --sort=-version:refname | head -1)"
+            if [[ -z "$LATEST" ]]; then VERSION=0.1.0; else
+              IFS=. read -r major minor patch <<< "${LATEST#v}"
+              VERSION="$major.$minor.$((patch + 1))"
+            fi
+          fi
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          ! git rev-parse "v$VERSION" >/dev/null 2>&1
+          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "APP_BUILD_NUMBER=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+          cat .github/release-contract.env >> "$GITHUB_ENV"
+      - name: Import Developer ID into temporary Keychain
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/macvm-release.keychain-db"
+          CERT="$RUNNER_TEMP/macvm-signing.p12"
+          trap 'rm -f "$CERT"' EXIT
+          printf '%s' "$MACOS_CERTIFICATE_P12_BASE64" | base64 --decode > "$CERT"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$CERT" -P "$MACOS_CERTIFICATE_PASSWORD" -k "$KEYCHAIN" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" | awk '/Developer ID Application/ && /66K3EFBVB6/ {print $2; exit}')"
+          [[ -n "$IDENTITY" ]]
+          echo "CODESIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          xcrun notarytool store-credentials macvm-release --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --keychain "$KEYCHAIN"
+      - name: Test and build
+        env:
+          CONFIGURATION: release
+        run: |
+          swift test
+          ./scripts/build-app.sh
+          PLIST="dist/$APP_BUNDLE_NAME/Contents/Info.plist"
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")" == "$APP_VERSION" ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")" == "$BUNDLE_IDENTIFIER" ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$PLIST")" == "$EXECUTABLE_NAME" ]]
+      - name: Verify publisher and notarize app
+        run: |
+          set -euo pipefail
+          APP="dist/$APP_BUNDLE_NAME"
+          for target in "$APP" "$APP/Contents/Resources/Helpers/MacVMRunner.app"; do
+            codesign --verify --strict --verbose=4 "$target"
+            SIGNATURE="$(codesign -dv --verbose=4 "$target" 2>&1)"
+            [[ "$SIGNATURE" == *"TeamIdentifier=$TEAM_IDENTIFIER"* ]]
+            [[ "$SIGNATURE" == *"runtime"* ]] # Build signs with --options runtime.
+          done
+          ditto -c -k --keepParent "$APP" "$RUNNER_TEMP/MacVM.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/MacVM.zip" --keychain-profile macvm-release --keychain "$RUNNER_TEMP/macvm-release.keychain-db" --wait
+          xcrun stapler staple "$APP"
+          xcrun stapler validate "$APP"
+          spctl --assess --type execute --verbose=4 "$APP"
+      - name: Create, notarize, and verify DMG
+        run: |
+          set -euo pipefail
+          ./scripts/create-dmg.sh
+          DMG="dist/$DMG_ASSET_NAME"
+          xcrun notarytool submit "$DMG" --keychain-profile macvm-release --keychain "$RUNNER_TEMP/macvm-release.keychain-db" --wait
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          codesign --verify --strict --verbose=4 "$DMG"
+          [[ "$(codesign -dv --verbose=4 "$DMG" 2>&1)" == *"TeamIdentifier=$TEAM_IDENTIFIER"* ]]
+          spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG"
+          shasum -a 256 "$DMG"
+          ./scripts/create-update-manifest.sh # Publishes MacVM.dmg.update.json alongside the DMG.
+      - name: Publish verified release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git tag "v$APP_VERSION"
+          git push origin "v$APP_VERSION"
+          gh release create "v$APP_VERSION" "dist/$DMG_ASSET_NAME" "dist/$MANIFEST_ASSET_NAME" --verify-tag --title "MacVM $APP_VERSION" --notes-file docs/release-notes.md
+      - name: Remove temporary signing material
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/macvm-release.keychain-db" || true
+          rm -f "$RUNNER_TEMP/macvm-signing.p12" "$RUNNER_TEMP/MacVM.zip"
