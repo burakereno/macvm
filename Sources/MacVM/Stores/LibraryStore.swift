@@ -264,8 +264,8 @@ final class LibraryStore {
     func trashInstaller(_ file: InstallationFile) {
         do {
             refresh()
-            guard locations.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }) else {
-                throw VMError.message("Reconnect your storage locations before removing installation files.")
+            guard notice == nil, locations.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }) else {
+                throw VMError.message("Reconnect unavailable storage and resolve unreadable machines before removing installation files.")
             }
             try InstallationFiles.moveToTrash(file.url, entries: entries)
             refresh()

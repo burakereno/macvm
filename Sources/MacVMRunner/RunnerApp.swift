@@ -241,10 +241,19 @@ final class RunnerDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @
                 // install() returns. End that session before booting the installed OS.
                 // Keep the installer retained so its shutdown cannot finish the runner.
                 self.publish(.starting)
+                machine.delegate = nil
                 if machine.state != .stopped {
                     do { try await machine.stop() }
                     catch { if machine.state != .stopped { throw error } }
                 }
+                // Installer guests omit folder shares. Build the normal guest
+                // configuration so Guest Tools are available on its first boot.
+                let toolsURL = Bundle.main.resourceURL?.appendingPathComponent("GuestTools", isDirectory: true)
+                let configuration = try VMConfigurationFactory.make(record: self.record, directory: self.directory, guestToolsURL: toolsURL)
+                let installedMachine = VZVirtualMachine(configuration: configuration)
+                installedMachine.delegate = self
+                self.machine = installedMachine
+                (self.window?.contentView as? VZVirtualMachineView)?.virtualMachine = installedMachine
                 self.installer = nil
                 self.start()
             } catch {
@@ -527,8 +536,14 @@ final class RunnerDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @
         NSApp.terminate(nil)
     }
 
-    func guestDidStop(_ virtualMachine: VZVirtualMachine) { if installer == nil { finish() } }
-    func virtualMachine(_ virtualMachine: VZVirtualMachine, didStopWithError error: Error) { fail(error) }
+    func guestDidStop(_ virtualMachine: VZVirtualMachine) {
+        guard virtualMachine === machine else { return }
+        if installer == nil { finish() }
+    }
+    func virtualMachine(_ virtualMachine: VZVirtualMachine, didStopWithError error: Error) {
+        guard virtualMachine === machine else { return }
+        fail(error)
+    }
     private func finish() {
         guard !terminating else { return }
         terminating = true

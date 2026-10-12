@@ -11,9 +11,11 @@ final class GuestClipboardController {
     private var hostCount: Int?
     private var guestCount: Int?
     private weak var activeMachine: VZVirtualMachine?
+    private var eligible = false
 
     func poll(machine: VZVirtualMachine, enabled: Bool, window: NSWindow?, running: Bool) {
-        guard enabled, running, NSApp.isActive, NSApp.keyWindow === window else { return }
+        eligible = enabled && running && NSApp.isActive && NSApp.keyWindow === window
+        guard eligible else { return }
         activeMachine = machine
         let now = ProcessInfo.processInfo.systemUptime
         guard !busy, now >= nextCheck, let device = machine.socketDevices.first as? VZVirtioSocketDevice else { return }
@@ -28,6 +30,9 @@ final class GuestClipboardController {
         device.connect(toPort: GuestControl.port) { [weak self] result in
             guard let self else { if case .success(let connection) = result { connection.close() }; return }
             guard case .success(let connection) = result else { self.busy = false; self.nextCheck = now + 5; return }
+            guard self.eligible, NSApp.isActive, NSApp.keyWindow === window else {
+                connection.close(); self.busy = false; return
+            }
             let descriptor = dup(connection.fileDescriptor); connection.close()
             guard descriptor >= 0 else { self.busy = false; return }
             DispatchQueue.global(qos: .utility).async { [weak self] in
@@ -38,7 +43,7 @@ final class GuestClipboardController {
                     let pasteboard = NSPasteboard.general
                     self.busy = false
                     if reply == nil { self.nextCheck = ProcessInfo.processInfo.systemUptime + 10 }
-                    guard let reply, self.activeMachine?.state == .running, NSApp.isActive, NSApp.keyWindow === window,
+                    guard let reply, self.eligible, self.activeMachine?.state == .running, NSApp.isActive, NSApp.keyWindow === window,
                           pasteboard.changeCount == capturedHostCount else { return }
                     if !sending, self.guestCount != nil, self.guestCount != reply.changeCount,
                        let text = reply.text {

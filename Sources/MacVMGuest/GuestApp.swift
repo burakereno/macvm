@@ -96,7 +96,9 @@ struct GuestApp {
             }
             let result = DispatchQueue.main.sync { requestShutdown() }
             try GuestControl.writeFrame(result, to: descriptor)
-        } catch { logger.error("Guest control connection ended: \(String(describing: error), privacy: .public)") }
+        } catch GuestControl.WireError.disconnected {
+            // A connection-only presence probe closes without sending a frame.
+        } catch { logger.error("Guest control request could not be decoded or completed") }
     }
 
     private static func requestShutdown() -> String {

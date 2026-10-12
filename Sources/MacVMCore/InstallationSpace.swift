@@ -6,11 +6,14 @@ public enum InstallationSpace {
         let vmRequired: UInt64 = (system == .macOS ? 64 : 12) * VMStorage.gib
         if system == .macOS && downloading {
             if sameVolume && vmFree < vmRequired + 32 * VMStorage.gib {
-                return "This volume needs at least 96 GB free for the macOS download and installation."
+                return "This volume needs at least \(format(96 * VMStorage.gib)) free for the macOS download and installation."
             }
-            if downloadsFree < 32 * VMStorage.gib { return "Downloads needs at least 32 GB free for the macOS image." }
+            if downloadsFree < 32 * VMStorage.gib { return "Downloads needs at least \(format(32 * VMStorage.gib)) free for the macOS image." }
         }
-        return vmFree < vmRequired ? "The machine location needs at least \(system == .macOS ? 64 : 12) GB free for installation." : nil
+        return vmFree < vmRequired ? "The machine location needs at least \(format(vmRequired)) free for installation." : nil
+    }
+    private static func format(_ bytes: UInt64) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
     }
     public static func problem(system: GuestSystem, downloading: Bool, location: URL) -> String? {
         let downloads = InstallationFiles.downloads
