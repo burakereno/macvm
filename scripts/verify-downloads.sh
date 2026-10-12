@@ -15,8 +15,14 @@ python3 Tests/Fixtures/download-server.py > "$WORK/port" 2> "$WORK/server.log" &
 SERVER_PID=$!
 for ((i=0; i<50; i++)); do [[ -s "$WORK/port" ]] && break; sleep 0.1; done
 [[ -s "$WORK/port" ]]
+read -r TASK_HTTP_PORT < "$WORK/port"
+[[ "$TASK_HTTP_PORT" =~ ^[0-9]+$ ]]
 kill -0 "$SERVER_PID"
-curl --fail --silent --max-time 5 "http://127.0.0.1:$(cat "$WORK/port")/health" > /dev/null
+curl --noproxy '*' --fail --silent --show-error --max-time 5 "http://127.0.0.1:$TASK_HTTP_PORT/health" > /dev/null || {
+    ps -p "$SERVER_PID" -o pid,command >&2
+    lsof -Pan -p "$SERVER_PID" -iTCP -sTCP:LISTEN >&2 || true
+    exit 1
+}
 swiftc -swift-version 5 -parse-as-library -target arm64-apple-macos26.0 \
     Sources/MacVMCore/*.swift Tests/Integration/DownloadCheck.swift -o "$WORK/DownloadCheck"
-"$WORK/DownloadCheck" "http://127.0.0.1:$(cat "$WORK/port")"
+"$WORK/DownloadCheck" "http://127.0.0.1:$TASK_HTTP_PORT"
