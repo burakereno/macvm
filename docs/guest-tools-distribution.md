@@ -36,7 +36,7 @@ physical-host guard, and a fixed system-volume installation destination.
   and publisher checks, refused execution on the physical host, and contained
   the updated installer text. Temporary extraction files were cleaned up.
 
-## Release boundary
+## Release boundary — 11 October 2026
 
 The local Keychain has a Developer ID Application identity but no Developer ID
 Installer identity. The local product package is therefore a development
@@ -79,3 +79,19 @@ Validation:
   zero active machines.
 - The unavailable-helper timing path was checked in policy tests and the alert
   preview, without uninstalling the working helper from the test guest.
+
+## Signed validation build — 12 October 2026
+
+The Developer ID Installer certificate has since been created and imported.
+Both signing identities and all eight Actions secrets are configured. The
+public source repository is https://github.com/burakereno/macvm.
+
+[Validation run 38241093895](https://github.com/burakereno/macvm/actions/runs/38241093895)
+built, signed and notarized Guest Tools, the app and the designed DMG. Staple and
+Gatekeeper checks passed. Downloaded artifacts were independently checked on
+the development Mac, including the manifest/DMG SHA-256. This run had publication
+disabled; it created verified build artifacts without a public release tag.
+
+Guest Tools 0.2 also implement optional text clipboard sharing. The new protocol
+and configurations have automated coverage; clipboard and folder sharing still
+need the current build's end-to-end guest UI tests before release publication.

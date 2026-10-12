@@ -182,8 +182,9 @@ log as private guest data; it is not included in distribution artifacts.
 The manual GitHub workflow imports an ephemeral signing identity, runs tests,
 verifies the publisher and hardened runtime, notarizes and staples the app and
 DMG, checks Gatekeeper, then publishes a version tag, DMG, and SHA-256 manifest.
-It must run in the configured repository with the six secrets described in
-the user's `macos-developer-id-release` skill. No credentials belong in Git.
+It must run in the configured repository with the eight secrets listed in
+the release workflow: six Application/notarization secrets and two Installer
+certificate secrets. No credentials belong in Git.
 
 For local notarization with an existing Keychain profile:
 
@@ -208,5 +209,6 @@ host and guest, automated accounts, port forwarding, Parallels import, and
 CLI/MCP automation are follow-up work. This release uses public Virtualization
 APIs; guest GPU capabilities depend on Apple's framework and the guest drivers.
 
-See [validation notes](docs/validation.md) for tested behavior and limitations.
+See [0.2 validation notes](docs/validation-0.2.md) for current checks and limits,
+and [0.1 validation history](docs/validation.md) for the earlier installation tests.
 Deferred fixes are tracked in [the backlog](docs/backlog.md).
