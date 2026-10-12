@@ -52,6 +52,7 @@ Publication was disabled for this run. All 42 cases passed in this build.
 - Ubuntu and macOS ran concurrently. Ubuntu shut down normally. After a macOS
   restart, pause/resume worked at the login screen and the host's Shut Down
   button powered off the guest without Force Stop; the runtime reported stopped.
+  A separate cold boot also shut down from the login screen without signing in.
 - The production updater helper assessed a notarized DMG, replaced an isolated
   older app and launched the actual 0.2.0 executable with startup confirmation.
   A second test deliberately withheld confirmation: the helper stopped only
@@ -59,6 +60,22 @@ Publication was disabled for this run. All 42 cases passed in this build.
   Both cases cleaned the mounted image, staging directory and workspace.
   This caught and fixed a macOS Bash 3.2 failure-propagation edge case and
   physical-path aliases in process matching (`scripts/verify-update-launch.sh`).
+
+## Published release and update
+
+[Release run 38251580530](https://github.com/burakereno/macvm/actions/runs/38251580530)
+passed tests, signatures, notarization, staples and Gatekeeper, then published
+[MacVM 0.2.0](https://github.com/burakereno/macvm/releases/tag/v0.2.0) from
+commit `6614cd1`. The public assets were downloaded and checked locally again;
+the manifest's exact asset, version, bundle, Team and SHA-256 matched the DMG.
+The app and package passed strict signatures and Gatekeeper.
+
+An isolated signed test copy reporting version 0.1.0 found the public 0.2.0
+release using the actual Check for Updates UI. Install Update downloaded and
+verified the DMG, replaced the app and relaunched a new process. The next check
+showed installed version 0.2.0 and "MacVM is up to date". No update workspace or
+backup remained. The user's VM packages were preserved and all guests were
+stopped during replacement.
 
 ## Validation limits
 

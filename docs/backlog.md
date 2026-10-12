@@ -13,7 +13,8 @@ Evidence and implementation: [shutdown validation](macos-shutdown-fix.md).
 
 ## Guest Tools broader compatibility validation
 
-Test cold boot while remaining at the login screen, fast user switching, locked user
-sessions, SSH sessions, and unsaved-document cancellation. The session policy
+Cold-boot shutdown from the login screen also passed with Guest Tools 0.2 on
+12 October 2026. Test fast user switching, locked user sessions, SSH sessions,
+and unsaved-document cancellation. The session policy
 already fails closed and is unit tested; these cases need additional live tests.
 Verify older supported macOS guest versions separately from macOS 27.0.1.

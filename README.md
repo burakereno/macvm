@@ -2,6 +2,14 @@
 
 A native Swift app for macOS and ARM64 Linux virtual machines on Apple silicon.
 
+## Download
+
+[Download MacVM](https://github.com/burakereno/macvm/releases/latest/download/MacVM.dmg)
+and drag the app to Applications. Public releases and the
+[macOS Guest Tools installer](https://github.com/burakereno/macvm/releases/latest/download/MacVM-Guest-Tools.pkg)
+are Developer ID signed, notarized and stapled. Install Guest Tools inside each
+macOS VM using the in-app guide.
+
 ## Requirements
 
 - Apple silicon Mac, macOS 26 or later.
