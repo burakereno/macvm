@@ -13,6 +13,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         route = urlsplit(self.path).path
+        if route == '/health':
+            self.send_response(200); self.send_header('Content-Length', '2'); self.end_headers(); self.wfile.write(b'ok'); return
         with lock:
             count = counts.get(self.path, 0)
             counts[self.path] = count + 1
