@@ -97,6 +97,7 @@ jobs:
         run: |
           swift test
           ./scripts/verify-downloads.sh
+          ./scripts/verify-update-installer.sh
           ./scripts/build-app.sh
           PLIST="dist/$APP_BUNDLE_NAME/Contents/Info.plist"
           [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")" == "$APP_VERSION" ]]

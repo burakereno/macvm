@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 /// Streams OS images to Downloads. A successful Range/If-Range exchange can
 /// resume an interrupted transfer; a changed validator restarts from zero.
@@ -46,20 +47,21 @@ public final class ImageDownloader: NSObject, URLSessionDataDelegate, @unchecked
                 self.continuation = continuation
                 do {
                     remoteURL = url
-                    if FileManager.default.fileExists(atPath: destination.path) {
-                        let values = try destination.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
-                        guard values.isRegularFile == true, values.isSymbolicLink != true else { throw VMError.message("The partial download is not a regular file.") }
+                    let descriptor = open(destination.path, O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC, 0o600)
+                    guard descriptor >= 0 else { throw VMError.message("Cannot create a regular download file in Downloads.") }
+                    var attributes = stat()
+                    guard fstat(descriptor, &attributes) == 0, attributes.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG),
+                          attributes.st_nlink == 1, attributes.st_uid == getuid() else {
+                        close(descriptor); throw VMError.message("The partial download is not a private regular file.")
+                    }
+                    file = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+                    if attributes.st_size > 0 {
                         if let data = try? Data(contentsOf: metadataURL), let resume = try? JSONDecoder().decode(ResumeInfo.self, from: data),
                            resume.url == url, let savedValidator = resume.validator, !savedValidator.isEmpty,
-                           let size = values.fileSize, size > 0, Int64(size) < resume.total {
-                            offset = Int64(size); validator = savedValidator
-                        }
-                    } else {
-                        guard FileManager.default.createFile(atPath: destination.path, contents: nil, attributes: [.posixPermissions: 0o600]) else {
-                            throw VMError.message("Cannot create a download in Downloads.")
+                           attributes.st_size < resume.total {
+                            offset = attributes.st_size; validator = savedValidator
                         }
                     }
-                    file = try FileHandle(forWritingTo: destination)
                     if offset == 0 { try file?.truncate(atOffset: 0) } else { try file?.seekToEnd() }
                     received = offset
                     let queue = OperationQueue(); queue.maxConcurrentOperationCount = 1

@@ -30,6 +30,11 @@ struct MacOSConfigurationCheck {
             try FileManager.default.createDirectory(at: tools, withIntermediateDirectories: true)
             saved.sharedFolders = [SharedFolder(name: "Test Folder", path: root.path)]
             let installed = try VMConfigurationFactory.make(record: saved, directory: bundle, guestToolsURL: tools)
+            let installerMachine = VZVirtualMachine(configuration: config)
+            let installedMachine = VZVirtualMachine(configuration: installed)
+            guard installerMachine.state == .stopped, installedMachine.state == .stopped else {
+                throw VMError.message("Configuration replacement unexpectedly started a guest.")
+            }
             guard let share = installed.directorySharingDevices.first as? VZVirtioFileSystemDeviceConfiguration,
                   share.tag == VZVirtioFileSystemDeviceConfiguration.macOSGuestAutomountTag,
                   let directories = share.share as? VZMultipleDirectoryShare,

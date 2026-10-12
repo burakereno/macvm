@@ -29,6 +29,13 @@ final class ImageDownloaderTests: XCTestCase {
         return ImageDownloader(destination: root.appendingPathComponent("MacVM-macOS-test.ipsw.download"), requiredRemainingSpace: 0,
                                configuration: config, availableCapacity: { _ in capacity }, progress: { _, _ in })
     }
+    func testBrokenSymlinkCannotCreateAFileOutsideDownloads() async throws {
+        let outside = root.appendingPathComponent("outside")
+        let destination = root.appendingPathComponent("MacVM-macOS-test.ipsw.download")
+        try FileManager.default.createSymbolicLink(at: destination, withDestinationURL: outside)
+        do { _ = try await downloader().download(remote); XCTFail("Must reject download symlink") } catch {}
+        XCTAssertFalse(FileManager.default.fileExists(atPath: outside.path))
+    }
     func testInterruptedDownloadResumesWithMatchingValidatorAndRange() async throws {
         ImageProtocol.handle = { _, connection in
             connection.reply(status: 200, headers: ["Content-Length": "10", "ETag": "\"version1\""], body: Data("abc".utf8), error: URLError(.networkConnectionLost))

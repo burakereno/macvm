@@ -46,6 +46,7 @@ for path, executable, identifier in [
         'NSHumanReadableCopyright': 'Copyright © 2026 Burak Erenoğlu.'
     }
     if executable == 'MacVM':
+        info['NSDownloadsFolderUsageDescription'] = 'MacVM saves macOS images here and lists ISO/IPSW installers so you can remove unused installation files.'
         info['UTExportedTypeDeclarations'] = [{
             'UTTypeIdentifier': identifier + '.machine', 'UTTypeDescription': 'MacVM Virtual Machine',
             'UTTypeConformsTo': ['com.apple.package'], 'UTTypeTagSpecification': {'public.filename-extension': ['macvm']}
