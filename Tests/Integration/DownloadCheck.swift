@@ -15,8 +15,13 @@ import Foundation
                 let first = ImageDownloader(destination: file, requiredRemainingSpace: 0, progress: { _, _ in })
                 var interrupted = false
                 do { _ = try await first.download(remote) } catch { interrupted = true }
-                let partial = Data(String(repeating: "01234567", count: 40960).utf8)
-                guard interrupted, try Data(contentsOf: file) == partial else { throw VMError.message("Partial bytes or interruption error were lost for \(route).") }
+                let partial = try Data(contentsOf: file)
+                let sent = Data(String(repeating: "01234567", count: 40960).utf8)
+                // URLSession may buffer the final network chunk differently
+                // across macOS releases; only received bytes can be resumed.
+                guard interrupted, partial.count <= sent.count, partial == sent.prefix(partial.count) else {
+                    throw VMError.message("Partial bytes or interruption error were lost for \(route).")
+                }
                 let retry = ImageDownloader(destination: file, requiredRemainingSpace: 0, progress: { _, _ in })
                 if route == "wrong-range" {
                     var rejected = false
