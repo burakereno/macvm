@@ -19,13 +19,31 @@ BACKUP_APP=''
 MOUNTED=0
 REPLACED=0
 launchConfirmation=0
+stop_unconfirmed_app() {
+    local candidate command
+    # Match the complete executable path, never a user-controlled regex.
+    for candidate in $(/usr/bin/pgrep -x MacVM || true); do
+        command=$(/bin/ps -p "$candidate" -o comm= 2>/dev/null || true)
+        [[ "$command" == "$TARGET/Contents/MacOS/MacVM" ]] || continue
+        /bin/kill -TERM "$candidate" 2>/dev/null || true
+        for ((j=0; j<20; j++)); do
+            if ! /bin/kill -0 "$candidate" 2>/dev/null; then break; fi
+            /bin/sleep 0.25
+        done
+        command=$(/bin/ps -p "$candidate" -o comm= 2>/dev/null || true)
+        if [[ "$command" == "$TARGET/Contents/MacOS/MacVM" ]]; then
+            /bin/kill -KILL "$candidate" 2>/dev/null || true
+        fi
+    done
+}
 cleanup_and_rollback() {
     local result=$?
     if [[ "$MOUNTED" == 1 ]]; then /usr/bin/hdiutil detach "$MOUNT" -quiet -force || true; fi
     if [[ "$REPLACED" == 1 && "$launchConfirmation" == 0 && -d "$BACKUP_APP" ]]; then
+        stop_unconfirmed_app
         if [[ -d "$TARGET" ]]; then /bin/mv "$TARGET" "$STAGING/failed.app"; fi
         /bin/mv "$BACKUP_APP" "$TARGET"
-        /usr/bin/open "$TARGET" || true
+        /usr/bin/open -n "$TARGET" || true
     fi
     if [[ -n "$STAGING" && -d "$STAGING" ]]; then /bin/rm -r "$STAGING"; fi
     if [[ -d "$WORK" ]]; then /bin/rm -r "$WORK"; fi
@@ -36,6 +54,8 @@ trap 'exit 130' INT TERM
 [[ "$TEAM_ID" == '66K3EFBVB6' && "$BUNDLE_ID" == 'com.burakerenoglu.macvm' ]]
 [[ "$PARENT_PID" =~ ^[0-9]+$ && "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ && "$SHA256" =~ ^[a-f0-9]{64}$ ]]
 [[ -d "$WORK" && ! -L "$WORK" && -d "$TARGET" && ! -L "$TARGET" && "${TARGET##*/}" == MacVM.app ]]
+# Process paths use physical parents (for example /private/var on macOS).
+TARGET="$(cd "$TARGET" && /bin/pwd -P)"
 ! /usr/bin/pgrep -x MacVMRunner >/dev/null
 [[ "$(/usr/bin/shasum -a 256 "$DMG" | /usr/bin/awk '{print $1}')" == "$SHA256" ]]
 /usr/bin/codesign --verify --strict --verbose=2 "$DMG"
@@ -62,25 +82,25 @@ BACKUP_APP="$STAGING/previous.app"
 # The old app stays intact throughout download, assessment and staging.
 /usr/bin/touch "$WORK/ready"
 for ((i=0; i<120; i++)); do
-    [[ -f "$WORK/quit-approved" ]] && break
+    if [[ -f "$WORK/quit-approved" ]]; then break; fi
     /bin/sleep 0.5
 done
-[[ -f "$WORK/quit-approved" ]]
+[[ -f "$WORK/quit-approved" ]] || exit 1
 for ((i=0; i<120; i++)); do
-    ! /bin/kill -0 "$PARENT_PID" 2>/dev/null && break
+    if ! /bin/kill -0 "$PARENT_PID" 2>/dev/null; then break; fi
     /bin/sleep 0.5
 done
-! /bin/kill -0 "$PARENT_PID" 2>/dev/null
-! /usr/bin/pgrep -x MacVMRunner >/dev/null
+! /bin/kill -0 "$PARENT_PID" 2>/dev/null || exit 1
+! /usr/bin/pgrep -x MacVMRunner >/dev/null || exit 1
 /bin/mv "$TARGET" "$BACKUP_APP"
 REPLACED=1
 /bin/mv "$STAGING/MacVM.app" "$TARGET"
 /usr/bin/open -n "$TARGET" --args --macvm-update-confirm "$WORK/started"
 for ((i=0; i<60; i++)); do
-    [[ -f "$WORK/started" ]] && break
+    if [[ -f "$WORK/started" ]]; then break; fi
     /bin/sleep 0.5
 done
-[[ -f "$WORK/started" ]]
+[[ -f "$WORK/started" ]] || exit 1
 # Confirmation is written after the new executable has initialized its library.
 launchConfirmation=1
 

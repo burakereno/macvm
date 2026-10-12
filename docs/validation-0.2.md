@@ -30,20 +30,41 @@ passed its macOS 26 tests and real HTTP integration, then signed/notarized the
 Guest Tools package, app and DMG. Staple, strict signatures, exact publisher,
 and Gatekeeper assessments passed. The downloaded package and DMG were assessed
 again locally; the manifest matched version, asset, bundle ID, Team ID and SHA-256.
-Publication was disabled for this run. The final source hardening changes and
-all 42 cases passed in this build; live GUI validation remains before release.
+Publication was disabled for this run. All 42 cases passed in this build.
 
-## Live checks still required for 0.2
+## Passed live checks
 
-- Installation Files listing/Trash, sharing settings, update UI and Finder DMG
-  appearance in the current app.
-- Ubuntu clipboard/share and macOS updated Guest Tools clipboard/share;
-  simultaneous guests and the broader shutdown/session cases in the backlog.
-- Actual update installation/relaunch and failure recovery against the final
-  signed release in an isolated test app.
-- The new restore-to-first-boot configuration switch needs a fresh restore test.
-  Existing 0.1 macOS/Ubuntu installation, full screen/Retina and shutdown evidence
-  remains in the linked historical validation documents.
+- Installation Files showed actual installer sizes and protected attached media.
+  A disposable ISO moved to Trash through the confirmation UI, disappeared from
+  the list and remained recoverable in Trash. The VM disks were unchanged.
+- Sharing settings selected a host folder, defaulted to read-only and saved
+  clipboard opt-in for each test VM. Both temporary configurations were removed
+  after the tests.
+- The designed Finder DMG showed the app, Applications link and installation
+  instructions without clipping. Update settings showed the installed version
+  and automatic toggle; manual network errors were visible.
+- Ubuntu 26.04.1 shared text in both directions through SPICE/spice-vdagent.
+  Its virtiofs folder was readable and rejected a privileged write.
+- The bundled signed/notarized Guest Tools 0.2 package installed in macOS 27.0.1
+  after user authorization. The setup warning cleared. Text clipboard sharing
+  worked in both directions; My Shared Files contained the selected folder and
+  rejected a write.
+- Ubuntu and macOS ran concurrently. Ubuntu shut down normally. After a macOS
+  restart, pause/resume worked at the login screen and the host's Shut Down
+  button powered off the guest without Force Stop; the runtime reported stopped.
+- The production updater helper assessed a notarized DMG, replaced an isolated
+  older app and launched the actual 0.2.0 executable with startup confirmation.
+  A second test deliberately withheld confirmation: the helper stopped only
+  the new target process, restored the original executable and relaunched it.
+  Both cases cleaned the mounted image, staging directory and workspace.
+  This caught and fixed a macOS Bash 3.2 failure-propagation edge case and
+  physical-path aliases in process matching (`scripts/verify-update-launch.sh`).
 
-These GUI tests have not yet been claimed as passed. No public release has been
-dispatched.
+## Validation limits
+
+The restore-to-first-boot configuration switch still needs a fresh full restore.
+Available space was about 73 GiB, below the 96 GiB same-volume starting policy;
+the policy was not bypassed. Existing 0.1 macOS/Ubuntu installation and
+full screen/Retina evidence remains in the historical validation documents.
+Broader guest-version, multiple-user and unsaved-session combinations remain
+in the backlog. Windows is not supported in this release.
