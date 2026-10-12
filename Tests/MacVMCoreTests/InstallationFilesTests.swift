@@ -10,7 +10,7 @@ final class InstallationFilesTests: XCTestCase {
     override func tearDownWithError() throws { try FileManager.default.removeItem(at: root) }
     func testPendingRestoreProtectedAndCompletedImageCanBeRemoved() throws {
         let image = root.appendingPathComponent("macOS.ipsw"); try Data("restore".utf8).write(to: image)
-        var record = VirtualMachineRecord(name: "Mac", system: .macOS)
+        var record = VirtualMachineRecord(name: "Mac", system: .macOS, cpuCount: 2)
         record.restoreImagePath = image.path
         let bundle = try VMStorage.createEmptyBundle(record: record, location: root)
         var entry = VMEntry(record: record, url: bundle)
@@ -22,7 +22,7 @@ final class InstallationFilesTests: XCTestCase {
         XCTAssertEqual(removed, image)
     }
     func testMountedInstallerAndRunningMachineProtected() throws {
-        var record = VirtualMachineRecord(name: "Linux", system: .linux, diskGB: 16)
+        var record = VirtualMachineRecord(name: "Linux", system: .linux, cpuCount: 2, diskGB: 16)
         let bundle = try VMStorage.createEmptyBundle(record: record, location: root)
         let iso = bundle.appendingPathComponent("Installer.iso"); try Data("iso".utf8).write(to: iso)
         var entry = VMEntry(record: record, url: bundle)

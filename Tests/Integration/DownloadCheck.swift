@@ -1,5 +1,4 @@
 import Foundation
-import MacVMCore
 
 @main struct DownloadCheck {
     static func main() async {

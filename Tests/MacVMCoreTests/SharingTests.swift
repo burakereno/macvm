@@ -22,9 +22,10 @@ final class SharingTests: XCTestCase {
         XCTAssertNil(old.clipboardSharingEnabled); XCTAssertNil(old.sharedFolders)
     }
     func testSharingRoundTripAndNamesCannotShadowInstallerShare() throws {
-        var record = VirtualMachineRecord(name: "Sharing", system: .linux)
+        var record = VirtualMachineRecord(name: "Sharing", system: .linux, cpuCount: 2)
         record.clipboardSharingEnabled = true
         record.sharedFolders = [SharedFolder(name: "Projects", path: "/tmp/projects")]
+        XCTAssertNoThrow(try VMStorage.validate(record))
         let imported = record.withoutHostSharing()
         XCTAssertEqual(imported.id, record.id); XCTAssertEqual(imported.name, record.name)
         XCTAssertNil(imported.sharedFolders); XCTAssertEqual(imported.clipboardSharingEnabled, false)

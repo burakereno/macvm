@@ -13,7 +13,6 @@ python3 Tests/Fixtures/download-server.py > "$WORK/port" 2> "$WORK/server.log" &
 SERVER_PID=$!
 for ((i=0; i<50; i++)); do [[ -s "$WORK/port" ]] && break; sleep 0.1; done
 [[ -s "$WORK/port" ]]
-swift build
-BIN_DIR="$(swift build --show-bin-path)"
-swiftc -parse-as-library -I "$BIN_DIR" Tests/Integration/DownloadCheck.swift "$BIN_DIR/MacVMCore.o" -o "$WORK/DownloadCheck"
+swiftc -swift-version 5 -parse-as-library -target arm64-apple-macos26.0 \
+    Sources/MacVMCore/*.swift Tests/Integration/DownloadCheck.swift -o "$WORK/DownloadCheck"
 "$WORK/DownloadCheck" "http://127.0.0.1:$(cat "$WORK/port")"
