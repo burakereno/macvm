@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 CONFIGURATION="${CONFIGURATION:-debug}"
-APP_VERSION="${APP_VERSION:-0.1.0}"
+APP_VERSION="${APP_VERSION:-0.2.0}"
 APP_BUILD_NUMBER="${APP_BUILD_NUMBER:-1}"
 BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER:-com.burakerenoglu.macvm}"
 CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
@@ -27,6 +27,8 @@ RUNNER="$APP_BUNDLE/Contents/Resources/Helpers/MacVMRunner.app"
 mkdir -p "$RUNNER/Contents/MacOS" "$RUNNER/Contents/Resources"
 cp "$BIN_DIR/MacVMRunner" "$RUNNER/Contents/MacOS/MacVMRunner"
 cp .build/MacVM.icns "$RUNNER/Contents/Resources/MacVM.icns"
+export APP_VERSION APP_BUILD_NUMBER
+./scripts/build-guest-tools.sh "$BIN_DIR/MacVMGuest" "$RUNNER/Contents/Resources/GuestTools"
 export APP_BUNDLE RUNNER APP_VERSION APP_BUILD_NUMBER BUNDLE_IDENTIFIER
 python3 - <<'PY'
 import os, plistlib
@@ -66,4 +68,5 @@ if [[ "$CODESIGN_IDENTITY" != "-" ]]; then
         [[ "$TEAM" == "66K3EFBVB6" ]] || { echo "Unexpected signing TeamIdentifier: $TEAM" >&2; exit 1; }
     done
 fi
+cp "$RUNNER/Contents/Resources/GuestTools/Install MacVM Guest Tools.pkg" "$ROOT_DIR/dist/MacVM-Guest-Tools.pkg"
 echo "Built $APP_BUNDLE"

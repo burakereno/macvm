@@ -6,6 +6,14 @@ source .github/release-contract.env
 : "${NOTARY_PROFILE:?Set NOTARY_PROFILE to an existing notarytool Keychain profile.}"
 : "${CODESIGN_IDENTITY:?Set CODESIGN_IDENTITY to your Developer ID Application identity.}"
 APP="dist/$APP_BUNDLE_NAME"
+GUEST_PACKAGE="$APP/Contents/Resources/Helpers/MacVMRunner.app/Contents/Resources/GuestTools/Install MacVM Guest Tools.pkg"
+package_signature="$(pkgutil --check-signature "$GUEST_PACKAGE")"
+[[ "$package_signature" == *"Developer ID Installer:"* && "$package_signature" == *"($TEAM_IDENTIFIER)"* ]] || {
+    echo 'Build with INSTALLER_SIGN_IDENTITY and GUEST_TOOLS_NOTARY_PROFILE before releasing Guest Tools.' >&2; exit 1;
+}
+xcrun stapler validate "$GUEST_PACKAGE"
+spctl --assess --type install --verbose=4 "$GUEST_PACKAGE"
+cp "$GUEST_PACKAGE" "dist/$GUEST_TOOLS_ASSET_NAME"
 codesign --verify --deep --strict --verbose=2 "$APP"
 for target in "$APP" "$APP/Contents/Resources/Helpers/MacVMRunner.app"; do
     signature="$(codesign -dv --verbose=4 "$target" 2>&1)"

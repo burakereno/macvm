@@ -20,28 +20,33 @@ final class MachineCreator {
         task = Task { [self] in
             var directory: URL?
             var partial: URL?
+            var imageLease: ImageLease?
+            defer { withExtendedLifetime(imageLease) {} }
             do {
                 var record = initialRecord
                 try VMStorage.validate(record)
-                let requiredGB = record.system == .macOS ? (downloadMacOS ? 90 : 64) : 12
-                guard VMStorage.availableBytes(at: location) >= UInt64(requiredGB) * VMStorage.gib else {
-                    throw VMError.message("This location needs at least \(requiredGB) GB free. Choose a location on another drive.")
+                if let problem = InstallationSpace.problem(system: record.system, downloading: downloadMacOS, location: location) {
+                    throw VMError.message(problem)
                 }
                 var selectedImage = imageURL
                 if record.system == .macOS && downloadMacOS {
                     stage = "Finding the latest compatible macOS…"
                     let remote = try await VZMacOSRestoreImage.latestSupported
                     try Task.checkCancellation()
-                    let cache = location.appendingPathComponent("Base Images")
+                    let cache = InstallationFiles.downloads
                     try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
-                    let finalURL = cache.appendingPathComponent(remote.buildVersion + ".ipsw")
+                    let finalURL = cache.appendingPathComponent("MacVM-macOS-" + remote.buildVersion + ".ipsw")
+                    imageLease = try ImageLease(url: finalURL)
                     if FileManager.default.fileExists(atPath: finalURL.path) {
                         selectedImage = finalURL
                     } else {
-                        let temporary = cache.appendingPathComponent(UUID().uuidString + ".download")
+                        let temporary = finalURL.appendingPathExtension("download")
                         partial = temporary
                         stage = "Downloading macOS from Apple…"
-                        let downloader = ImageDownloader(destination: temporary) { [weak self] value, bytes in
+                        let vmVolume = (try? location.resourceValues(forKeys: [.volumeUUIDStringKey]))?.volumeUUIDString
+                        let downloadVolume = (try? cache.resourceValues(forKeys: [.volumeUUIDStringKey]))?.volumeUUIDString
+                        let reserve: UInt64 = vmVolume == downloadVolume ? 64 * VMStorage.gib : 2 * VMStorage.gib
+                        let downloader = ImageDownloader(destination: temporary, requiredRemainingSpace: reserve) { [weak self] value, bytes in
                             Task { @MainActor in
                                 self?.progress = value
                                 self?.stage = "Downloading macOS · " + ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
@@ -50,10 +55,14 @@ final class MachineCreator {
                         let downloaded = try await downloader.download(remote.url)
                         try Task.checkCancellation()
                         try FileManager.default.moveItem(at: downloaded, to: finalURL)
+                        try? FileManager.default.removeItem(at: temporary.appendingPathExtension("json"))
                         partial = nil; selectedImage = finalURL
                     }
                 }
                 guard let selectedImage else { throw VMError.message("Choose an installation image first.") }
+                if imageLease == nil { imageLease = try ImageLease(url: selectedImage) }
+                record.sourceImagePath = selectedImage.path
+                if let problem = InstallationSpace.problem(system: record.system, downloading: false, location: location) { throw VMError.message(problem) }
                 try Task.checkCancellation()
                 stage = "Preparing your virtual machine…"; progress = nil
                 var macImage: VZMacOSRestoreImage?
@@ -67,6 +76,10 @@ final class MachineCreator {
                     try VMConfigurationFactory.prepareMac(at: bundle, restoreImage: macImage)
                 } else {
                     stage = "Copying the Linux installer…"
+                    let imageBytes = (try selectedImage.resourceValues(forKeys: [.fileSizeKey])).fileSize ?? 0
+                    guard VMStorage.availableBytes(at: location) >= UInt64(max(0, imageBytes)) + 12 * VMStorage.gib else {
+                        throw VMError.message("The machine location needs room for the ISO copy plus at least 12 GB for Linux.")
+                    }
                     try await Task.detached(priority: .userInitiated) {
                         try FileManager.default.copyItem(at: selectedImage, to: bundle.appendingPathComponent("Installer.iso"))
                     }.value
@@ -82,9 +95,9 @@ final class MachineCreator {
                 completion(VMEntry(record: saved, url: published))
             } catch {
                 if let directory { try? FileManager.default.removeItem(at: directory) }
-                if let partial { try? FileManager.default.removeItem(at: partial) }
                 isWorking = false
-                if !Task.isCancelled { errorMessage = error.localizedDescription }
+                if Task.isCancelled, partial != nil { errorMessage = "Download paused in Downloads. Choose Create again to resume, or remove it in Installation Files." }
+                else if !Task.isCancelled { errorMessage = error.localizedDescription }
             }
         }
     }

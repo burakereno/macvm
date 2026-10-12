@@ -27,6 +27,7 @@ final class LibraryStore {
     var selectedID: UUID?
     var settingsEntry: VMEntry?
     var confirmation: MachineConfirmation?
+    var installerToTrash: InstallationFile?
     private var importedPaths: [String] = []
     private var activeIDs: Set<UUID> = []
     private var launching: [UUID: Date] = [:]
@@ -182,12 +183,19 @@ final class LibraryStore {
 
     func importMachine(at url: URL) {
         do {
-            let record = try VMStorage.validateBundle(at: url)
+            var record = try VMStorage.validateBundle(at: url)
             if let existing = entries.first(where: { $0.id == record.id }) {
                 guard existing.url.standardizedFileURL == url.standardizedFileURL else {
                     throw VMError.message("A machine with this identity is already in your library. Use Duplicate to make an independent copy.")
                 }
                 selectedID = existing.id; return
+            }
+            if record.clipboardSharingEnabled == true || !(record.sharedFolders ?? []).isEmpty {
+                let lock = try VMLock(directory: url)
+                defer { withExtendedLifetime(lock) {} }
+                record = record.withoutHostSharing()
+                try record.save(to: url)
+                errorMessage = "Sharing was disabled for this imported machine. Choose folders and clipboard access in Machine Settings before enabling them."
             }
             importedPaths.append(url.path)
             try savePreferences(); refresh(); selectedID = record.id
@@ -246,6 +254,21 @@ final class LibraryStore {
             try FileManager.default.trashItem(at: entry.url, resultingItemURL: nil)
             importedPaths.removeAll { $0 == entry.url.path }
             try savePreferences(); refresh()
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    var installationFiles: [InstallationFile] {
+        InstallationFiles.list(legacyCaches: locations.map { $0.url.appendingPathComponent("Base Images") }, entries: entries)
+    }
+
+    func trashInstaller(_ file: InstallationFile) {
+        do {
+            refresh()
+            guard locations.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }) else {
+                throw VMError.message("Reconnect your storage locations before removing installation files.")
+            }
+            try InstallationFiles.moveToTrash(file.url, entries: entries)
+            refresh()
         } catch { errorMessage = error.localizedDescription }
     }
 

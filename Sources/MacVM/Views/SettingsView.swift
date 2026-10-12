@@ -1,14 +1,15 @@
 import SwiftUI
 import MacVMCore
+import MacVMUI
 
 private enum SettingsSection: String, CaseIterable, Identifiable {
-    case images = "Base Images", locations = "Locations", machines = "Virtual Machines", about = "About"
+    case images = "Installation Files", locations = "Locations", machines = "Virtual Machines", guestTools = "Guest Tools", about = "About"
     var id: String { rawValue }
     var symbol: String {
-        switch self { case .images: "square.3.layers.3d"; case .locations: "externaldrive.fill"; case .machines: "macwindow"; case .about: "info.circle.fill" }
+        switch self { case .images: "square.3.layers.3d"; case .locations: "externaldrive.fill"; case .machines: "macwindow"; case .guestTools: "shippingbox.fill"; case .about: "info.circle.fill" }
     }
     var color: Color {
-        switch self { case .images: .gray; case .locations: .indigo; case .machines: .cyan; case .about: .blue }
+        switch self { case .images: .gray; case .locations: .indigo; case .machines: .cyan; case .guestTools: .orange; case .about: .blue }
     }
 }
 
@@ -30,6 +31,7 @@ struct SettingsView: View {
                     Text(section.rawValue)
                 }.padding(.vertical, 3).tag(section)
             }.listStyle(.sidebar).navigationSplitViewColumnWidth(190)
+                .toolbar(removing: .sidebarToggle)
         } detail: {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
@@ -38,6 +40,7 @@ struct SettingsView: View {
                     case .locations: locationsContent
                     case .images: imagesContent
                     case .machines: defaultsContent
+                    case .guestTools: GuestToolsView()
                     case .about: aboutContent
                     }
                     Spacer(minLength: 20)
@@ -45,6 +48,15 @@ struct SettingsView: View {
             }
         }
         .frame(width: 840, height: 570)
+        .alert("Move installer to the Trash?", isPresented: Binding(get: { library.installerToTrash != nil }, set: { if !$0 { library.installerToTrash = nil } })) {
+            Button("Cancel", role: .cancel) { library.installerToTrash = nil }
+            Button("Move to Trash", role: .destructive) {
+                if let file = library.installerToTrash { library.trashInstaller(file) }
+                library.installerToTrash = nil
+            }
+        } message: {
+            Text("\(library.installerToTrash?.url.lastPathComponent ?? "") will move to the Trash. Empty the Trash in Finder when you want to reclaim the space. Your virtual disk stays in place.")
+        }
         .alert("MacVM", isPresented: Binding(get: { library.errorMessage != nil }, set: { if !$0 { library.errorMessage = nil } })) {
             Button("OK") { library.errorMessage = nil }
         } message: { Text(library.errorMessage ?? "") }
@@ -77,28 +89,36 @@ struct SettingsView: View {
 
     private var imagesContent: some View {
         VStack(alignment: .leading, spacing: 16) {
-            let images = cachedImages
+            let images = library.installationFiles
+            VStack(alignment: .leading, spacing: 8) {
+                Text("\(ByteCountFormatter.string(fromByteCount: images.reduce(0) { $0 + $1.bytes }, countStyle: .file)) in installation files").font(.headline)
+                Text("New macOS downloads go to Downloads. Remove installers after you finish installing; files still needed by a machine are protected.").font(.callout).foregroundStyle(.secondary)
+                Button("Open Downloads", systemImage: "arrow.down.circle") { NSWorkspace.shared.open(InstallationFiles.downloads) }
+            }.padding(17).settingsCard()
             if images.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "square.3.layers.3d").font(.system(size: 35)).foregroundStyle(.secondary)
                     Text("A home for your installers").font(.system(size: 16, weight: .semibold))
-                    Text("macOS images downloaded from Apple appear here.\nReuse them to create another machine without downloading again.")
+                    Text("ISO and IPSW files in Downloads and your machine packages appear here.")
                         .font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.center).lineSpacing(3)
                 }.frame(maxWidth: .infinity).padding(.vertical, 38).settingsCard()
             } else {
-                ForEach(images, id: \.path) { url in
+                ForEach(images) { file in
                     HStack(spacing: 12) {
-                        Image(systemName: "apple.logo").foregroundStyle(.green).font(.title2)
+                        Image(systemName: file.url.pathExtension.lowercased() == "download" ? "arrow.down.circle" : (file.url.pathExtension.lowercased() == "ipsw" ? "apple.logo" : "opticaldisc")).foregroundStyle(.orange).font(.title2)
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(url.lastPathComponent).fontWeight(.medium)
-                            Text(shortPath(url.deletingLastPathComponent().path)).font(.caption).foregroundStyle(.secondary)
+                            Text(file.url.lastPathComponent).fontWeight(.medium).lineLimit(1)
+                            if file.url.pathExtension == "download" { Text("Paused macOS download · choose Create to resume").font(.caption).foregroundStyle(.secondary) }
+                            Text("\(ByteCountFormatter.string(fromByteCount: file.bytes, countStyle: .file)) · \(file.machineName ?? shortPath(file.url.deletingLastPathComponent().path))").font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                            if let blocker = file.blocker { Text(blocker).font(.caption).foregroundStyle(.orange) }
                         }
                         Spacer()
-                        Button("Show") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                        Button("Show") { NSWorkspace.shared.activateFileViewerSelecting([file.url]) }
+                        Button("Move to Trash…") { library.installerToTrash = file }.disabled(file.blocker != nil)
                     }.padding(17).settingsCard()
                 }
             }
-            Text("Local IPSW files stay where you selected them. Linux installers are copied into each machine’s package.")
+            Text("Linux installers have a copy inside the machine package. Turn off Boot from installer ISO in machine settings, then remove that copy while the machine is shut down. Files outside MacVM’s folders are only listed when you selected them for a machine.")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
         }
     }
@@ -142,11 +162,6 @@ struct SettingsView: View {
         }.padding(24).settingsCard()
     }
 
-    private var cachedImages: [URL] {
-        library.locations.flatMap { location in
-            ((try? FileManager.default.contentsOfDirectory(at: location.url.appendingPathComponent("Base Images"), includingPropertiesForKeys: nil)) ?? []).filter { $0.pathExtension == "ipsw" }
-        }
-    }
     private func shortPath(_ path: String) -> String { path.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~") }
 }
 

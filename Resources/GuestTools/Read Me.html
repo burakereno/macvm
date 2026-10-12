@@ -1,0 +1,11 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>MacVM Guest Tools</title>
+<body style="font: 15px -apple-system; line-height: 1.6; max-width: 700px; margin: 48px auto; padding: 24px">
+<h1>MacVM Guest Tools</h1>
+<p>This package connects your macOS virtual machine to MacVM’s Shut Down button and optional text clipboard sharing.</p>
+<ol><li>Sign in to the macOS virtual machine.</li><li>Open <strong>Install MacVM Guest Tools.pkg</strong> in this folder.</li><li>Follow the installer and enter the <strong>guest’s</strong> administrator password.</li><li>Restart the guest using its Apple menu.</li></ol>
+<p>Requires macOS 26 or later inside an Apple silicon virtual machine. Install once per macOS guest. Linux guests do not need this package. The installer refuses to run on a physical Mac.</p>
+<h2>Preview status</h2><p>Desktop and login-screen shutdown have been tested on macOS 27.0.1. If another user session exists, sign in before requesting shutdown so macOS can handle open applications. If MacVM cannot connect, use the guest’s own power menu. MacVM never automatically forces shutdown.</p>
+<h2>Updates and removal</h2><p>To update, rerun the installer included with the newer MacVM app, then restart the guest.</p><p>To remove, run this command in the guest’s Terminal:</p>
+<pre style="white-space: pre-wrap">sudo "/Library/Application Support/MacVM/GuestTools/uninstall.sh"</pre>
+<h2>How it works</h2><p>The background helper accepts shutdown and optional text clipboard requests only from this VM’s host. No SSH access, network ports, or stored passwords are required. Applications can still ask you to save changes before shutting down.</p>
+<p>Clipboard sharing starts disabled. Enable Share clipboard in MacVM’s Machine Settings while the machine is shut down. Update Guest Tools after updating MacVM. Text is shared only while this guest window is active.</p></body></html>

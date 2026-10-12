@@ -36,6 +36,25 @@ struct MachineSettingsView: View {
                         Text("After installing Linux, shut down the machine and turn this off to boot from its virtual disk.")
                     }
                 }
+                Section("Sharing") {
+                    Toggle("Share clipboard", isOn: Binding(get: { record.clipboardSharingEnabled == true }, set: { record.clipboardSharingEnabled = $0 }))
+                    Text(record.system == .macOS ? "Text clipboard sharing requires the included Guest Tools. Only the active VM window shares your clipboard." : "Clipboard sharing requires spice-vdagent inside Linux. Ubuntu: sudo apt install spice-vdagent, then sign out and in.").font(.caption).foregroundStyle(.secondary)
+                    ForEach(record.sharedFolders ?? []) { folder in
+                        VStack(alignment: .leading, spacing: 5) {
+                            HStack {
+                                Text(folder.name).fontWeight(.medium)
+                                Spacer()
+                                Button("Remove") { record.sharedFolders?.removeAll { $0.id == folder.id } }
+                            }
+                            Text(folder.path).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                            Toggle("Read only", isOn: Binding(get: { record.sharedFolders?.first(where: { $0.id == folder.id })?.readOnly ?? true }, set: { value in
+                                if let index = record.sharedFolders?.firstIndex(where: { $0.id == folder.id }) { record.sharedFolders?[index].readOnly = value }
+                            }))
+                        }
+                    }
+                    Button("Add Shared Folder…", action: addSharedFolder).disabled((record.sharedFolders ?? []).count >= 8)
+                    Text(record.system == .macOS ? "Shared folders appear in Finder → My Shared Files after starting the machine." : "In Linux, mount the share once: sudo mkdir -p /mnt/macvm; sudo mount -t virtiofs macvm-share /mnt/macvm").font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                }
                 if record.installationPending {
                     Section("macOS installation") {
                         LabeledContent("Restore image") {
@@ -62,5 +81,16 @@ struct MachineSettingsView: View {
                 }
             }.padding(.horizontal, 25).padding(.bottom, 22)
         }.frame(width: 550, height: 565)
+    }
+
+    private func addSharedFolder() {
+        let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false
+        panel.message = "Choose the folder this machine can access. It starts read-only."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard !(record.sharedFolders ?? []).contains(where: { $0.path == url.path }) else { return }
+        let base = url.lastPathComponent == "MacVM Guest Tools" ? "Shared Folder" : url.lastPathComponent
+        var name = base; var count = 2
+        while (record.sharedFolders ?? []).contains(where: { $0.name == name }) { name = "\(base) \(count)"; count += 1 }
+        record.sharedFolders = (record.sharedFolders ?? []) + [SharedFolder(name: name, path: url.path)]
     }
 }

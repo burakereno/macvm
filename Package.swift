@@ -6,13 +6,18 @@ let package = Package(
     platforms: [.macOS("26.0")],
     products: [
         .executable(name: "MacVM", targets: ["MacVM"]),
-        .executable(name: "MacVMRunner", targets: ["MacVMRunner"])
+        .executable(name: "MacVMRunner", targets: ["MacVMRunner"]),
+        .executable(name: "MacVMGuest", targets: ["MacVMGuest"])
     ],
     targets: [
         .target(name: "MacVMCore"),
-        .executableTarget(name: "MacVM", dependencies: ["MacVMCore"]),
-        .executableTarget(name: "MacVMRunner", dependencies: ["MacVMCore"]),
-        .testTarget(name: "MacVMCoreTests", dependencies: ["MacVMCore"])
+        .target(name: "GuestControl"),
+        .target(name: "MacVMUI"),
+        .target(name: "MacVMUpdate", dependencies: ["MacVMCore"]),
+        .executableTarget(name: "MacVM", dependencies: ["MacVMCore", "MacVMUI", "MacVMUpdate"]),
+        .executableTarget(name: "MacVMRunner", dependencies: ["MacVMCore", "GuestControl", "MacVMUI"]),
+        .executableTarget(name: "MacVMGuest", dependencies: ["GuestControl"]),
+        .testTarget(name: "MacVMCoreTests", dependencies: ["MacVMCore", "GuestControl", "MacVMUpdate"])
     ],
     swiftLanguageModes: [.v5]
 )

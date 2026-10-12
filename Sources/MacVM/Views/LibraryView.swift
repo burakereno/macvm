@@ -34,9 +34,7 @@ struct LibraryView: View {
                         .foregroundStyle(.orange).help("Some machines or locations need attention")
                 }
             }
-            ToolbarItem(placement: .principal) {
-                Text("MacVM").font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary)
-            }
+            ToolbarSpacer(.flexible, placement: .primaryAction)
             ToolbarItemGroup(placement: .primaryAction) {
                 Button { openSettings() } label: { Label("Settings", systemImage: "slider.horizontal.3") }
                     .help("Settings · ⌘,")

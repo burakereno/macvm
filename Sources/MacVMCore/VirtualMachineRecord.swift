@@ -23,6 +23,9 @@ public struct VirtualMachineRecord: Codable, Identifiable, Equatable, Sendable {
     public var installationPending: Bool
     public var restoreImagePath: String?
     public var osVersion: String?
+    public var sourceImagePath: String?
+    public var clipboardSharingEnabled: Bool?
+    public var sharedFolders: [SharedFolder]?
 
     public init(name: String, system: GuestSystem, cpuCount: Int = 4, memoryGB: Int = 4, diskGB: Int = 64) {
         self.id = UUID()
@@ -43,6 +46,13 @@ public struct VirtualMachineRecord: Codable, Identifiable, Equatable, Sendable {
             .map { String(format: "%02x", $0) }.joined(separator: ":")
     }
 
+    /// Imported packages cannot grant themselves access to host folders or
+    /// the host clipboard. The user can select sharing again in Settings.
+    public func withoutHostSharing() -> Self {
+        var copy = self; copy.sharedFolders = nil; copy.clipboardSharingEnabled = false
+        return copy
+    }
+
     public static func load(from directory: URL) throws -> Self {
         let record = try JSONDecoder().decode(Self.self, from: Data(contentsOf: directory.appendingPathComponent("Config.json")))
         guard record.schemaVersion == 1 else { throw VMError.message("This machine was created with a newer version of MacVM.") }
@@ -53,6 +63,16 @@ public struct VirtualMachineRecord: Codable, Identifiable, Equatable, Sendable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(self).write(to: directory.appendingPathComponent("Config.json"), options: .atomic)
+    }
+}
+
+public struct SharedFolder: Codable, Identifiable, Equatable, Sendable {
+    public var id: UUID
+    public var name: String
+    public var path: String
+    public var readOnly: Bool
+    public init(name: String, path: String, readOnly: Bool = true) {
+        id = UUID(); self.name = name; self.path = path; self.readOnly = readOnly
     }
 }
 

@@ -1,14 +1,21 @@
-MacVM 0.1.0 introduces native macOS and ARM64 Linux virtual machines for Apple silicon.
+MacVM 0.2 adds installer management, sharing and verified app updates to the native macOS and ARM64 Linux VM manager for Apple silicon.
 
-- A compact machine library with live state and disk usage.
-- macOS installation from a local IPSW or Apple's latest supported restore image.
-- Linux installation from ARM64 UEFI ISOs.
-- Per-machine windows and independent runner processes.
-- Start, pause, resume, guest shutdown, and force stop.
-- CPU, memory, disk capacity at creation, and NAT network settings.
-- Storage locations, package import, offline duplication, moving, and Trash support.
-- Developer ID signing and a notarized DMG release pipeline.
+- macOS downloads go to Downloads, with validated resume after interruption.
+- Installation Files lists ISO/IPSW files, partial downloads and their sizes.
+  Unused installers can move to Trash; files required for installation or in use
+  are protected. VM disks are preserved.
+- Per-machine opt-in clipboard sharing and selected shared folders. Folders start
+  read-only. macOS text sharing uses current Guest Tools; Linux clipboard sharing
+  requires spice-vdagent.
+- Imported VM packages start with host sharing disabled until you enable it.
+- Manual and automatic update checks, exact publisher and checksum verification,
+  staged installation, backup, rollback and relaunch confirmation. Active VMs
+  prevent app replacement.
+- A designed drag-to-Applications DMG and separately signed Guest Tools installer.
+- macOS Guest Tools setup reminders, login-screen shutdown, native full screen,
+  Retina resolution, pause/resume, and storage locations.
 
-Requires macOS 26 or later on Apple silicon. Account setup is completed inside
-the guest. Windows, snapshots, shared clipboard, and automated accounts are not
-included. macOS installation requires enough free space for the OS and restore image.
+Requires macOS 26 or later on Apple silicon. Guest Tools desktop and login-screen
+shutdown were previously verified on macOS 27.0.1; broader guest-version and
+session combinations need separate live validation. This release does not add
+Windows, snapshots, disk resizing, or automated guest accounts.

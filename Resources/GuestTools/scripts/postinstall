@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+case "$(/usr/sbin/sysctl -n hw.model)" in VirtualMac*) ;; *) exit 1 ;; esac
+guest_uid="$(/usr/bin/stat -f %u /dev/console)"
+if [ "$guest_uid" -ge 500 ]; then
+    /bin/launchctl bootout "gui/$guest_uid/com.burakerenoglu.macvm.guest" 2>/dev/null || true
+    /bin/launchctl bootstrap "gui/$guest_uid" /Library/LaunchAgents/com.burakerenoglu.macvm.guest.plist
+fi

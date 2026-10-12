@@ -2,6 +2,7 @@
 dist/
 .DS_Store
 *.dmg
+*.pkg
 *.zip
 *.p12
 *.cer

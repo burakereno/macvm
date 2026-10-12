@@ -4,6 +4,7 @@ import MacVMCore
 struct MachineRow: View {
     let entry: VMEntry
     @Bindable var library: LibraryStore
+    @Environment(\.openWindow) private var openWindow
     private var phase: RuntimePhase { library.phase(for: entry) }
     private var selected: Bool { library.selectedID == entry.id }
     private var inUse: Bool { library.isInUse(entry) }
@@ -68,7 +69,8 @@ struct MachineRow: View {
 
     private var detail: String {
         if library.busyIDs.contains(entry.id) { return "Working with this machine…" }
-        if phase == .failed, let message = library.statuses[entry.id]?.message { return message }
+        if (phase.isActive || phase == .failed), let message = library.statuses[entry.id]?.message { return message }
+        if phase == .stopping { return "Waiting for the guest to shut down…" }
         let used = ByteCountFormatter.string(fromByteCount: VMStorage.allocatedBytes(at: entry.url.appendingPathComponent("Disk.img")), countStyle: .file)
         return "\(entry.record.cpuCount) CPU · \(entry.record.memoryGB) GB RAM · \(used) of \(entry.record.diskGB) GB · \(entry.record.osVersion ?? entry.record.system.title)"
     }
@@ -83,6 +85,9 @@ struct MachineRow: View {
         }
         Divider()
         Button("Settings…", systemImage: "slider.horizontal.3") { library.settingsEntry = entry }.disabled(inUse)
+        if entry.record.system == .macOS {
+            Button("Guest Tools…", systemImage: "shippingbox") { openWindow(id: "guest-tools") }
+        }
         Button("Duplicate", systemImage: "plus.square.on.square") { library.duplicate(entry) }.disabled(inUse || entry.record.installationPending)
         Menu("Move to Location", systemImage: "folder") {
             ForEach(library.locations) { location in

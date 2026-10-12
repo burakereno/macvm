@@ -24,6 +24,11 @@ public enum VMStorage {
         guard record.diskGB >= record.system.minimumDiskGB, record.diskGB <= 2048 else {
             throw VMError.message("Choose a disk between \(record.system.minimumDiskGB) GB and 2 TB.")
         }
+        let folders = record.sharedFolders ?? []
+        guard folders.count <= 8, Set(folders.map(\.name)).count == folders.count,
+              folders.allSatisfy({ !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.name.count <= 80 && !$0.name.contains("/") && !$0.name.contains("\0") && $0.name != "." && $0.name != ".." && $0.name != "MacVM Guest Tools" && $0.path.hasPrefix("/") && !$0.path.contains("\0") }) else {
+            throw VMError.message("Choose up to eight shared folders with unique names.")
+        }
     }
 
     public static func createEmptyBundle(record: VirtualMachineRecord, location: URL, staging: Bool = false) throws -> URL {

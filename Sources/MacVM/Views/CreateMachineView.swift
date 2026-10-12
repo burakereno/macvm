@@ -20,9 +20,9 @@ struct CreateMachineView: View {
     @AppStorage("defaultNetwork") private var defaultNetwork = true
     @AppStorage("startAfterCreation") private var startAfterCreation = true
     private var location: StorageLocation? { library.locations.first { $0.id == locationID } ?? library.locations.first }
-    private var requiredGB: Int { system == .macOS ? (downloadMacOS ? 90 : 64) : 12 }
     private var available: UInt64 { location.map { VMStorage.availableBytes(at: $0.url) } ?? 0 }
-    private var spaceOK: Bool { available >= UInt64(requiredGB) * VMStorage.gib }
+    private var spaceProblem: String? { location.flatMap { InstallationSpace.problem(system: system, downloading: downloadMacOS, location: $0.url) } }
+    private var spaceOK: Bool { location != nil && spaceProblem == nil }
     private var canCreate: Bool {
         !creator.isWorking && !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && name.count <= 100 && location != nil && spaceOK && ((system == .macOS && downloadMacOS) || imageURL != nil)
     }
@@ -45,6 +45,7 @@ struct CreateMachineView: View {
                             Text("Download from Apple").tag(true)
                             Text("Local IPSW file").tag(false)
                         }
+                        if downloadMacOS { LabeledContent("Download folder", value: "Downloads") }
                     }
                     if system == .linux || !downloadMacOS {
                         LabeledContent(system == .macOS ? "Restore image" : "ARM64 ISO") {
@@ -92,7 +93,7 @@ struct CreateMachineView: View {
                 } else if let error = creator.errorMessage {
                     Label(error, systemImage: "exclamationmark.circle.fill").font(.system(size: 12)).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
                 } else if !spaceOK {
-                    Label("This location needs at least \(requiredGB) GB free\(system == .macOS && downloadMacOS ? " for the download and installation" : " for installation"). Add a location on another drive.", systemImage: "exclamationmark.circle.fill")
+                    Label(spaceProblem ?? "Choose a storage location.", systemImage: "exclamationmark.circle.fill")
                         .font(.system(size: 12)).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
                 }
                 HStack {
@@ -122,6 +123,7 @@ struct CreateMachineView: View {
 
     private func selectImage() {
         let panel = NSOpenPanel()
+        panel.directoryURL = InstallationFiles.downloads
         panel.allowedContentTypes = [UTType(filenameExtension: system == .macOS ? "ipsw" : "iso") ?? .data]
         panel.message = system == .macOS ? "Choose a macOS restore image." : "Choose a Linux ARM64 installation ISO. Intel (x86_64) images cannot run on Apple silicon."
         if panel.runModal() == .OK { imageURL = panel.url }

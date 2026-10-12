@@ -28,7 +28,7 @@ public enum VMConfigurationFactory {
         _ = try VZEFIVariableStore(creatingVariableStoreAt: directory.appendingPathComponent("EFI.nvram"))
     }
 
-    public static func make(record: VirtualMachineRecord, directory: URL) throws -> VZVirtualMachineConfiguration {
+    public static func make(record: VirtualMachineRecord, directory: URL, guestToolsURL: URL? = nil) throws -> VZVirtualMachineConfiguration {
         guard VZVirtualMachine.isSupported else { throw VMError.message("Virtualization is not available on this Mac.") }
         try VMStorage.validate(record)
         let configuration = VZVirtualMachineConfiguration()
@@ -50,6 +50,7 @@ public enum VMConfigurationFactory {
             configuration.graphicsDevices = [graphics]
             configuration.keyboards = [VZMacKeyboardConfiguration()]
             configuration.pointingDevices = [VZMacTrackpadConfiguration()]
+            configuration.socketDevices = [VZVirtioSocketDeviceConfiguration()]
         } else {
             configuration.platform = VZGenericPlatformConfiguration()
             let bootLoader = VZEFIBootLoader()
@@ -62,15 +63,47 @@ public enum VMConfigurationFactory {
             configuration.pointingDevices = [VZUSBScreenCoordinatePointingDeviceConfiguration()]
             configuration.entropyDevices = [VZVirtioEntropyDeviceConfiguration()]
             configuration.memoryBalloonDevices = [VZVirtioTraditionalMemoryBalloonDeviceConfiguration()]
+            if record.clipboardSharingEnabled == true {
+                let console = VZVirtioConsoleDeviceConfiguration()
+                let port = VZVirtioConsolePortConfiguration()
+                port.name = VZSpiceAgentPortAttachment.spiceAgentPortName
+                let attachment = VZSpiceAgentPortAttachment(); attachment.sharesClipboard = true
+                port.attachment = attachment
+                console.ports[0] = port
+                configuration.consoleDevices = [console]
+            }
         }
 
-        let diskAttachment = try VZDiskImageStorageDeviceAttachment(url: directory.appendingPathComponent("Disk.img"), readOnly: false, cachingMode: .automatic, synchronizationMode: .full)
+        if !record.installationPending {
+            var directories: [String: VZSharedDirectory] = [:]
+            for folder in record.sharedFolders ?? [] {
+                let url = URL(fileURLWithPath: folder.path)
+                var isDirectory: ObjCBool = false
+                guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), isDirectory.boolValue else {
+                    throw VMError.message("Shared folder ‘\(folder.name)’ is unavailable. Reconnect its drive or remove the folder in machine settings.")
+                }
+                directories[folder.name] = VZSharedDirectory(url: url, readOnly: folder.readOnly)
+            }
+            if record.system == .macOS, let guestToolsURL {
+                directories["MacVM Guest Tools"] = VZSharedDirectory(url: guestToolsURL, readOnly: true)
+            }
+            if !directories.isEmpty {
+                let share = VZVirtioFileSystemDeviceConfiguration(tag: record.system == .macOS ? VZVirtioFileSystemDeviceConfiguration.macOSGuestAutomountTag : "macvm-share")
+                share.share = VZMultipleDirectoryShare(directories: directories)
+                configuration.directorySharingDevices = [share]
+            }
+        }
+
+        // Linux virtio I/O can corrupt data with the uncached path chosen by .automatic.
+        // Keep full flush guarantees while explicitly enabling host caching.
+        // https://github.com/utmapp/UTM/issues/4840#issuecomment-1824340975
+        let diskAttachment = try VZDiskImageStorageDeviceAttachment(url: directory.appendingPathComponent("Disk.img"), readOnly: false, cachingMode: record.system == .linux ? .cached : .automatic, synchronizationMode: .full)
         let disk = VZVirtioBlockDeviceConfiguration(attachment: diskAttachment)
         configuration.storageDevices = [disk]
         if record.system == .linux && record.bootFromInstaller {
             let iso = directory.appendingPathComponent("Installer.iso")
             guard FileManager.default.fileExists(atPath: iso.path) else { throw VMError.message("The installer ISO is missing. Turn off ‘Boot from installer’ in machine settings to boot the disk.") }
-            let attachment = try VZDiskImageStorageDeviceAttachment(url: iso, readOnly: true)
+            let attachment = try VZDiskImageStorageDeviceAttachment(url: iso, readOnly: true, cachingMode: .cached, synchronizationMode: .full)
             configuration.storageDevices.insert(VZUSBMassStorageDeviceConfiguration(attachment: attachment), at: 0)
         }
         if record.networkEnabled {
