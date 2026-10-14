@@ -4,6 +4,11 @@ In the VM window choose Virtual Machine > Install Windows Tools. In Windows,
 open the MacVM Tools CD, right-click Install.cmd and Run as administrator.
 The CD installs the ARM64 network/serial drivers, clipboard agent, shared-folder
 helper and matching display driver/service. Restart Windows when it finishes.
+For a new VM, shut down Windows after installation, enable Automatic display
+resolution in MacVM Machine Settings, then start it again. Keep this option off
+before Tools installation or to recover a blank display; no ISO is required
+for the setup/recovery display. Follow the separate restart steps below when
+upgrading an older display driver.
 MacVM's Windows Tools Status menu shows whether the clipboard agent connected.
 MacVM reminds you if Tools are unavailable after setup; no reminder interrupts
 Windows Setup. Tools do not activate Windows or supply a Windows licence.

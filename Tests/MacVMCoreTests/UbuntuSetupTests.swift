@@ -17,7 +17,7 @@ final class UbuntuSetupTests: XCTestCase {
         XCTAssertThrowsError(try UbuntuSetup.validatePublicKey("ssh-rsa " + key.base64EncodedString()))
     }
     func testProfileRequirementsAndNonSecretMetadata() throws {
-        var record = VirtualMachineRecord(name: "Ubuntu", system: .linux, memoryGB: 2, diskGB: 16)
+        var record = VirtualMachineRecord(name: "Ubuntu", system: .linux, cpuCount: 1, memoryGB: 2, diskGB: 16)
         record.ubuntuSetup = UbuntuSetup(profile: .gnome, username: "macvm-test")
         XCTAssertThrowsError(try VMStorage.validate(record))
         record.ubuntuSetup?.profile = .server

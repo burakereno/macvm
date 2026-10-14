@@ -15,6 +15,15 @@ final class WindowsIntegrationTests: XCTestCase {
         config.installerPath = "/tmp/setup.iso"
         let installer = try config.arguments(runtime: URL(fileURLWithPath: "/tmp/private-win"), embeddedDisplay: true)
         XCTAssertLessThan(installer.firstIndex(of: "ramfb")!, installer.firstIndex(of: "virtio-gpu-pci,id=gpu,xres=2560,yres=1600")!)
+        // Removing installation media before installing drivers must retain a
+        // usable setup/recovery framebuffer for newly created machines.
+        config.installerPath = nil; config.automaticDisplay = false
+        let recovery = try config.arguments(runtime: URL(fileURLWithPath: "/tmp/private-win"), embeddedDisplay: true)
+        XCTAssertFalse(recovery.contains(where: { $0.contains("install-cd") }))
+        XCTAssertLessThan(recovery.firstIndex(of: "ramfb")!, recovery.firstIndex(of: "virtio-gpu-pci,id=gpu,xres=2560,yres=1600")!)
+        config.automaticDisplay = true
+        let automatic = try config.arguments(runtime: URL(fileURLWithPath: "/tmp/private-win"), embeddedDisplay: true)
+        XCTAssertLessThan(automatic.firstIndex(of: "virtio-gpu-pci,id=gpu,xres=2560,yres=1600")!, automatic.firstIndex(of: "ramfb")!)
     }
     func testFramebufferChecksBoundsAndRetainsPreviousPixels() throws {
         var frame = try DisplayFramebuffer(width: 2, height: 2)

@@ -13,6 +13,7 @@ public struct WindowsConfiguration: Codable, Equatable, Sendable {
     public var firmwarePath = "/opt/homebrew/share/qemu/edk2-aarch64-code.fd"
     public var dataPath: String?
     public var audioEnabled: Bool?
+    public var automaticDisplay: Bool?
     public var installerPath: String?
     public var toolsPath: String?
     public var networkEnabled: Bool?
@@ -45,7 +46,7 @@ public struct WindowsConfiguration: Codable, Equatable, Sendable {
         // Display Tools disables Windows' duplicate Basic Display fallback
         // only after verifying the installed VirtIO driver is healthy.
         let gpu = "virtio-gpu-pci,id=gpu,xres=2560,yres=1600"
-        let displays = installerPath == nil
+        let displays = (automaticDisplay ?? (installerPath == nil))
             ? ["-device", gpu, "-device", "ramfb"]
             : ["-device", "ramfb", "-device", gpu]
         // This VM uses PCI VirtIO devices. Exposing the board's 32 empty
@@ -108,6 +109,7 @@ public struct WindowsConfiguration: Codable, Equatable, Sendable {
         value.firmwarePath = resources.appendingPathComponent("WindowsEngine/edk2-aarch64-secure-code.fd").path
         value.dataPath = resources.appendingPathComponent("WindowsEngine").path
         value.audioEnabled = record.audioEnabled ?? true
+        value.automaticDisplay = record.windowsAutomaticDisplay
         value.networkEnabled = record.networkEnabled; value.macAddress = record.macAddress
         if record.bootFromInstaller {
             value.installerPath = directory.appendingPathComponent("Installer.iso").path

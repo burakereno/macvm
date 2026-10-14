@@ -64,6 +64,7 @@ public enum WindowsMachinePreparation {
                                expectedSHA256: String? = nil) throws -> VMEntry {
         var record = initial
         record.bootFromInstaller = true; record.windowsInstallationPending = true
+        record.windowsAutomaticDisplay = false
         record.sourceImagePath = iso.path; record.osVersion = "Windows 11 ARM"; record.audioEnabled = true
         try VMStorage.validate(record)
         guard record.system == .windows else { throw VMError.message("Choose Windows for this installation.") }

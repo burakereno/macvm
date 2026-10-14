@@ -109,7 +109,7 @@ final class WindowsRunnerDelegate: NSObject, NSApplicationDelegate, NSWindowDele
             guard let self else { return }
             if let error { self.showError(error); return }
             let box = NSAlert(); box.messageText = "Install Windows Tools"
-            box.informativeText = "In Windows, open This PC → MacVM Tools. Right-click Install.cmd and choose Run as administrator. This installs display, network and integration drivers, text clipboard and shared-folder helpers. Follow its restart instructions; upgrading an older display driver may require running it again. After restarting, Windows Tools Status confirms the connection. Set Windows display scaling to 200% for Retina. Shared folders selected in Machine Settings appear at \\\\localhost@9843\\DavWWWRoot."
+            box.informativeText = "In Windows, open This PC → MacVM Tools. Right-click Install.cmd and choose Run as administrator. This installs display, network and integration drivers, text clipboard and shared-folder helpers. Follow its restart instructions; upgrading an older display driver may require running it again. After installation, shut down Windows and enable Automatic display resolution in Machine Settings before starting again. Windows Tools Status confirms the connection. Set Windows display scaling to 200% for Retina. Shared folders selected in Machine Settings appear at \\\\localhost@9843\\DavWWWRoot."
             box.addButton(withTitle: "OK"); self.alert = box
             if let window = self.window { box.beginSheetModal(for: window) { [weak self] _ in self?.alert = nil } }
         }

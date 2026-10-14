@@ -42,6 +42,13 @@ struct MachineSettingsView: View {
                             record.bootFromInstaller = value
                             if record.system == .windows && !value { record.windowsInstallationPending = false }
                         }))
+                        if record.system == .windows {
+                            Toggle("Automatic display resolution", isOn: Binding(get: {
+                                record.windowsAutomaticDisplay ?? !record.bootFromInstaller
+                            }, set: { record.windowsAutomaticDisplay = $0 }))
+                            Text("Install Windows Tools first. Then shut down Windows, enable automatic display resolution and start it again. Turn this off to recover a blank screen; the setup display also works without an ISO.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                     } footer: {
                         Text("After installing \(record.system.title), shut down the machine and turn this off to boot from its virtual disk. Remove unused ISO files in Settings → Installation Files.")
                     }

@@ -31,6 +31,7 @@ public struct VirtualMachineRecord: Codable, Identifiable, Equatable, Sendable {
     public var clipboardSharingEnabled: Bool?
     public var sharedFolders: [SharedFolder]?
     public var windowsInstallationPending: Bool?
+    public var windowsAutomaticDisplay: Bool?
     public var audioEnabled: Bool?
 
     public init(name: String, system: GuestSystem, cpuCount: Int = 4, memoryGB: Int = 4, diskGB: Int = 64) {
