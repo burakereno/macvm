@@ -50,6 +50,12 @@ final class WindowsSharingTests: XCTestCase {
         XCTAssertEqual(try request("PROPFIND", "/", headers: ["Depth":"infinity"]).status, 403)
         let listing = try request("PROPFIND", "/", headers: ["Depth":"1"])
         XCTAssertEqual(listing.status, 207); XCTAssertTrue(String(decoding: listing.body, as: UTF8.self).contains("Writable"))
+        // Windows must see a read-only file as read-only before it opens a
+        // local WebDAV cache copy, in addition to the server rejecting writes.
+        let readOnlyProperties = try request("PROPFIND", "/ReadOnly/sample.txt", headers: ["Depth":"0"])
+        XCTAssertTrue(String(decoding: readOnlyProperties.body, as: UTF8.self).contains("<m:Win32FileAttributes>00000021</m:Win32FileAttributes>"))
+        let writableProperties = try request("PROPFIND", "/Writable/new.txt", headers: ["Depth":"0"])
+        XCTAssertTrue(String(decoding: writableProperties.body, as: UTF8.self).contains("<m:Win32FileAttributes>00000020</m:Win32FileAttributes>"))
         for path in ["/Writable/../ReadOnly/sample.txt", "/Writable/%2e%2e/ReadOnly/sample.txt", "/Writable/%00file", "/Other/file"] { XCTAssertEqual(try request("GET", path).status, 403) }
         try FileManager.default.createSymbolicLink(at: writable.appendingPathComponent("escape"), withDestinationURL: readOnly)
         XCTAssertEqual(try request("GET", "/Writable/escape/sample.txt").status, 403)

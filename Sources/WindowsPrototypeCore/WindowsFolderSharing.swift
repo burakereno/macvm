@@ -204,8 +204,8 @@ public final class WindowsWebDAV {
         if request.path == "/" {
             if request.method == "PROPFIND" {
                 guard [nil, "0", "1"].contains(request.headers["depth"]) else { return answer(403) }
-                var entries = [properties(path: "/", name: "MacVM Shared Folders", directory: true, size: 0, modified: Date())]
-                if request.headers["depth"] != "0" { entries += folders.map { properties(path: "/" + encode($0.name) + "/", name: $0.name, directory: true, size: 0, modified: Date()) } }
+                var entries = [properties(path: "/", name: "MacVM Shared Folders", directory: true, size: 0, modified: Date(), readOnly: true)]
+                if request.headers["depth"] != "0" { entries += folders.map { properties(path: "/" + encode($0.name) + "/", name: $0.name, directory: true, size: 0, modified: Date(), readOnly: $0.readOnly) } }
                 return answer(207, xml(entries), extra: ["Content-Type":"application/xml; charset=utf-8"])
             }
             return answer(403)
@@ -224,10 +224,10 @@ public final class WindowsWebDAV {
                 let values = try WindowsShareFileSystem.info(item.descriptor, item.leaf)
                 let isDirectory = values.directory
                 let path = request.path + (isDirectory && !request.path.hasSuffix("/") ? "/" : "")
-                var entries = [properties(path: path, name: item.root ? item.folder.name : item.leaf, directory: isDirectory, size: values.bytes, modified: values.modified)]
+                var entries = [properties(path: path, name: item.root ? item.folder.name : item.leaf, directory: isDirectory, size: values.bytes, modified: values.modified, readOnly: item.folder.readOnly)]
                 if isDirectory && request.headers["depth"] != "0" {
                     for info in try WindowsShareFileSystem.list(item.descriptor, item.leaf) {
-                        entries.append(properties(path: path + encode(info.name) + (info.directory ? "/" : ""), name: info.name, directory: info.directory, size: info.bytes, modified: info.modified))
+                        entries.append(properties(path: path + encode(info.name) + (info.directory ? "/" : ""), name: info.name, directory: info.directory, size: info.bytes, modified: info.modified, readOnly: item.folder.readOnly))
                     }
                 }
                 return answer(207, xml(entries), extra: ["Content-Type":"application/xml; charset=utf-8"])
@@ -290,10 +290,13 @@ public final class WindowsWebDAV {
     private func encode(_ value: String) -> String { value.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "" }
     private func escape(_ value: String) -> String { value.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;").replacingOccurrences(of: "\"", with: "&quot;") }
     private func xml(_ entries: [String]) -> Data { Data(("<?xml version=\"1.0\" encoding=\"utf-8\"?><d:multistatus xmlns:d=\"DAV:\" xmlns:m=\"urn:schemas-microsoft-com:\">" + entries.joined() + "</d:multistatus>").utf8) }
-    private func properties(path: String, name: String, directory: Bool, size: Int, modified: Date) -> String {
+    private func properties(path: String, name: String, directory: Bool, size: Int, modified: Date, readOnly: Bool) -> String {
         let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.timeZone = TimeZone(secondsFromGMT: 0); formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
         let key = "/" + (path.removingPercentEncoding ?? path).split(separator: "/").joined(separator: "/")
         let discovery = locks.filter { $0.key == key || ($0.value.descendants && key.hasPrefix($0.key + "/")) }.map { lockXML($0.key, $0.value) }.joined()
-        return "<d:response><d:href>\(escape(path))</d:href><d:propstat><d:prop><d:displayname>\(escape(name))</d:displayname><d:resourcetype>\(directory ? "<d:collection/>" : "")</d:resourcetype><d:getcontentlength>\(size)</d:getcontentlength><d:getlastmodified>\(formatter.string(from: modified))</d:getlastmodified><d:getetag>\"\(size)-\(Int(modified.timeIntervalSince1970))\"</d:getetag><m:Win32FileAttributes>\(directory ? "00000010" : "00000020")</m:Win32FileAttributes><d:supportedlock><d:lockentry><d:lockscope><d:exclusive/></d:lockscope><d:locktype><d:write/></d:locktype></d:lockentry></d:supportedlock><d:lockdiscovery>\(discovery)</d:lockdiscovery></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>"
+        // Advertise the same permissions we enforce. Windows applications use
+        // FILE_ATTRIBUTE_READONLY to avoid silently editing a cached WebDAV copy.
+        let attributes = String(format: "%08X", (directory ? 0x10 : 0x20) | (readOnly ? 0x01 : 0))
+        return "<d:response><d:href>\(escape(path))</d:href><d:propstat><d:prop><d:displayname>\(escape(name))</d:displayname><d:resourcetype>\(directory ? "<d:collection/>" : "")</d:resourcetype><d:getcontentlength>\(size)</d:getcontentlength><d:getlastmodified>\(formatter.string(from: modified))</d:getlastmodified><d:getetag>\"\(size)-\(Int(modified.timeIntervalSince1970))\"</d:getetag><m:Win32FileAttributes>\(attributes)</m:Win32FileAttributes><d:supportedlock><d:lockentry><d:lockscope><d:exclusive/></d:lockscope><d:locktype><d:write/></d:locktype></d:lockentry></d:supportedlock><d:lockdiscovery>\(discovery)</d:lockdiscovery></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>"
     }
 }
