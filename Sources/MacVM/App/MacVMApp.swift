@@ -11,6 +11,7 @@ struct MacVMApp: App {
     @State private var updateInstaller = UpdateInstaller()
     @AppStorage("automaticallyCheckForUpdates") private var automaticallyCheckForUpdates = true
     @Environment(\.openWindow) private var openWindow
+    @FocusedValue(\.findMachine) private var findMachine
 
     var body: some Scene {
         Window("MacVM", id: "library") {
@@ -29,6 +30,11 @@ struct MacVMApp: App {
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unified)
         .commands {
+            CommandGroup(after: .textEditing) {
+                Button("Find a Machine") { findMachine?() }
+                    .keyboardShortcut("f")
+                    .disabled(findMachine == nil)
+            }
             CommandGroup(after: .appInfo) {
                 Button("Check for Updates…") { openWindow(id: "updates"); Task { await updater.check(manual: true) } }
                     .disabled(updater.isChecking || updateInstaller.isWorking)

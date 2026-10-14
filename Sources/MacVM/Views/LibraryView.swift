@@ -4,6 +4,7 @@ import MacVMCore
 struct LibraryView: View {
     @Bindable var library: LibraryStore
     @State private var search = ""
+    @State private var searchFocusRequest = 0
     @Environment(\.openSettings) private var openSettings
     private var filtered: [VMEntry] {
         library.entries.filter { search.isEmpty || $0.record.name.localizedCaseInsensitiveContains(search) || $0.record.system.title.localizedCaseInsensitiveContains(search) }
@@ -34,6 +35,12 @@ struct LibraryView: View {
                         .foregroundStyle(.orange).help("Some machines or locations need attention")
                 }
             }
+            if library.entries.count > 5 {
+                ToolbarItem(placement: .principal) {
+                    LibrarySearchField(text: $search, focusRequest: searchFocusRequest)
+                        .frame(width: 280)
+                }
+            }
             ToolbarSpacer(.flexible, placement: .primaryAction)
             ToolbarItemGroup(placement: .primaryAction) {
                 Button { openSettings() } label: { Label("Settings", systemImage: "slider.horizontal.3") }
@@ -42,7 +49,10 @@ struct LibraryView: View {
                     .help("New Virtual Machine · ⌘N")
             }
         }
-        .modifier(LibrarySearch(isVisible: library.entries.count > 5, text: $search))
+        .onChange(of: library.entries.count > 5) { _, isVisible in
+            if !isVisible { search = "" }
+        }
+        .focusedSceneValue(\.findMachine, library.entries.count > 5 ? { searchFocusRequest += 1 } : nil)
         .sheet(isPresented: $library.showCreate) { CreateMachineView(library: library) }
         .sheet(item: $library.settingsEntry) { entry in MachineSettingsView(entry: entry, library: library) }
         .alert("MacVM", isPresented: Binding(get: { library.errorMessage != nil }, set: { if !$0 { library.errorMessage = nil } })) {
@@ -112,14 +122,5 @@ struct LibraryView: View {
         }
         .font(.system(size: 11)).foregroundStyle(.tertiary)
         .padding(.horizontal, 25).padding(.bottom, 17).padding(.top, 10)
-    }
-}
-
-private struct LibrarySearch: ViewModifier {
-    let isVisible: Bool
-    @Binding var text: String
-    @ViewBuilder func body(content: Content) -> some View {
-        if isVisible { content.searchable(text: $text, placement: .toolbar, prompt: "Find a machine") }
-        else { content.onAppear { text = "" } }
     }
 }
