@@ -9,12 +9,16 @@ on:
       - scripts/build-windows-guest-helpers.ps1
 permissions:
   contents: read
+concurrency:
+  group: windows-guest-helpers-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   build:
     runs-on: windows-2025
     timeout-minutes: 180
     env:
       MACVM_BINARY_CACHE: ${{ github.workspace }}/.build/windows-binary-cache
+      MACVM_SOURCE_CACHE: ${{ github.workspace }}/.build/windows-source-cache
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,7 +28,7 @@ jobs:
         with:
           path: |
             .build/windows-binary-cache
-            .build/windows-guest-sources/vcpkg/downloads
+            .build/windows-source-cache
           key: windows-arm64-release-e456309-${{ hashFiles('scripts/build-windows-guest-helpers.ps1') }}
       - name: Build pinned ARM64 sources
         shell: pwsh
@@ -34,7 +38,7 @@ jobs:
         with:
           path: |
             .build/windows-binary-cache
-            .build/windows-guest-sources/vcpkg/downloads
+            .build/windows-source-cache
           key: ${{ steps.windows-cache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v4
         with:

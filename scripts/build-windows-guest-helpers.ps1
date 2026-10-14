@@ -39,6 +39,11 @@ foreach ($module in @(
     Get-ChildItem -LiteralPath $path -Force | Where-Object Name -ne '.git' | Copy-Item -Destination $modulePath -Recurse -Force
 }
 $webdav = Checkout 'spice-webdavd' 'https://github.com/utmapp/spice-webdavd-arm64.git' $webdavCommit
+if ($env:MACVM_SOURCE_CACHE) {
+    New-Item -ItemType Directory -Path $env:MACVM_SOURCE_CACHE -Force | Out-Null
+    $env:VCPKG_DOWNLOADS = $env:MACVM_SOURCE_CACHE
+}
+if ($env:MACVM_BINARY_CACHE) { New-Item -ItemType Directory -Path $env:MACVM_BINARY_CACHE -Force | Out-Null }
 Run (Join-Path $vcpkg 'bootstrap-vcpkg.bat') @('-disableMetrics')
 $env:VCPKG_DISABLE_METRICS = '1'
 $env:VCPKG_BINARY_SOURCES = if ($env:MACVM_BINARY_CACHE) { "clear;files,$env:MACVM_BINARY_CACHE,readwrite" } else { 'clear' }
@@ -97,7 +102,8 @@ $archives = Join-Path $sources 'dependency-archives'
 New-Item -ItemType Directory -Path $archives -Force | Out-Null
 # Top-level vcpkg downloads are upstream source archives; downloaded build
 # tools live in subdirectories and are not redistributed in the source asset.
-Get-ChildItem (Join-Path $vcpkg 'downloads') -File | Where-Object { $_.Name -match '\.(tar\.gz|tar\.xz|tar\.bz2|tgz|zip)$' } | Copy-Item -Destination $archives
+$downloadCache = if ($env:VCPKG_DOWNLOADS) { $env:VCPKG_DOWNLOADS } else { Join-Path $vcpkg 'downloads' }
+Get-ChildItem $downloadCache -File | Where-Object { $_.Name -match '\.(tar\.gz|tar\.xz|tar\.bz2|tgz|zip)$' } | Copy-Item -Destination $archives
 Copy-Item $PSCommandPath (Join-Path $sources 'build-windows-guest-helpers.ps1')
 $readme = @'
 These sources correspond to the MacVM-built ARM64 VDAgent, VDService and
