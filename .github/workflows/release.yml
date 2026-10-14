@@ -110,7 +110,12 @@ jobs:
           REQUIRE_WINDOWS_ENGINE: '1'
         run: |
           swift test
-          xcrun xctest "$(swift build --show-bin-path)/WindowsPrototypeTests.xctest"
+          WINDOWS_TEST_BUNDLE="$(swift build --show-bin-path)/WindowsPrototypeTests.xctest"
+          if [[ -d "$WINDOWS_TEST_BUNDLE" ]]; then
+            xcrun xctest "$WINDOWS_TEST_BUNDLE"
+          else
+            swift test --skip-build --filter WindowsPrototypeTests
+          fi
           ./scripts/verify-downloads.sh
           ./scripts/verify-update-installer.sh
           ./scripts/build-app.sh

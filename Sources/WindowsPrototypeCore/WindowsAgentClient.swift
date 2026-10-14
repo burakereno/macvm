@@ -58,7 +58,8 @@ public final class WindowsAgentClient {
     }
     private func capabilities(request: Bool) -> Data {
         // Clipboard by demand, text, and CRLF. No file transfer or monitor changes.
-        Data.littleEndian(request ? 1 : 0) + .littleEndian((1 << 3) | (1 << 5) | (1 << 9) | (1 << 10) | (1 << 13))
+        let mask: UInt32 = (1 << 3) | (1 << 5) | (1 << 9) | (1 << 10) | (1 << 13)
+        return Data.littleEndian(request ? 1 : 0) + Data.littleEndian(mask)
     }
     private func notify(_ connected: Bool) { DispatchQueue.main.async { self.onConnected?(connected) } }
     private func receive(_ message: AgentMessage, _ connection: WindowsSocket) throws {
