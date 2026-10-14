@@ -29,6 +29,7 @@ public enum VMConfigurationFactory {
     }
 
     public static func make(record: VirtualMachineRecord, directory: URL, guestToolsURL: URL? = nil) throws -> VZVirtualMachineConfiguration {
+        guard record.system != .windows else { throw VMError.message("Windows uses the Windows engine.") }
         guard VZVirtualMachine.isSupported else { throw VMError.message("Virtualization is not available on this Mac.") }
         try VMStorage.validate(record)
         let configuration = VZVirtualMachineConfiguration()
@@ -94,12 +95,28 @@ public enum VMConfigurationFactory {
             }
         }
 
+        if record.system == .linux, record.ubuntuSetup != nil {
+            if record.ubuntuSetup?.completed == false || FileManager.default.fileExists(atPath: UbuntuProvisioning.folder(in: directory).path) {
+                try UbuntuProvisioning.validateFolder(directory)
+                let share = VZVirtioFileSystemDeviceConfiguration(tag: "macvm-setup")
+                share.share = VZSingleDirectoryShare(directory: VZSharedDirectory(url: UbuntuProvisioning.folder(in: directory), readOnly: false))
+                configuration.directorySharingDevices.append(share)
+            }
+        }
+
         // Linux virtio I/O can corrupt data with the uncached path chosen by .automatic.
         // Keep full flush guarantees while explicitly enabling host caching.
         // https://github.com/utmapp/UTM/issues/4840#issuecomment-1824340975
         let diskAttachment = try VZDiskImageStorageDeviceAttachment(url: directory.appendingPathComponent("Disk.img"), readOnly: false, cachingMode: record.system == .linux ? .cached : .automatic, synchronizationMode: .full)
         let disk = VZVirtioBlockDeviceConfiguration(attachment: diskAttachment)
         configuration.storageDevices = [disk]
+        if record.ubuntuSetup?.completed == false {
+            let seed = directory.appendingPathComponent("NoCloud.iso")
+            let values = try seed.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+            guard values.isRegularFile == true, values.isSymbolicLink != true else { throw VMError.message("Ubuntu’s first-boot data is missing.") }
+            let attachment = try VZDiskImageStorageDeviceAttachment(url: seed, readOnly: true, cachingMode: .cached, synchronizationMode: .full)
+            configuration.storageDevices.append(VZVirtioBlockDeviceConfiguration(attachment: attachment))
+        }
         if record.system == .linux && record.bootFromInstaller {
             let iso = directory.appendingPathComponent("Installer.iso")
             guard FileManager.default.fileExists(atPath: iso.path) else { throw VMError.message("The installer ISO is missing. Turn off ‘Boot from installer’ in machine settings to boot the disk.") }

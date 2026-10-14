@@ -92,14 +92,14 @@ struct SettingsView: View {
             let images = library.installationFiles
             VStack(alignment: .leading, spacing: 8) {
                 Text("\(ByteCountFormatter.string(fromByteCount: images.reduce(0) { $0 + $1.bytes }, countStyle: .file)) in installation files").font(.headline)
-                Text("New macOS downloads go to Downloads. Remove installers after you finish installing; files still needed by a machine are protected.").font(.callout).foregroundStyle(.secondary)
+                Text("New macOS and Ubuntu downloads go to Downloads. Remove installation files when setup is complete; files still needed by a machine are protected.").font(.callout).foregroundStyle(.secondary)
                 Button("Open Downloads", systemImage: "arrow.down.circle") { NSWorkspace.shared.open(InstallationFiles.downloads) }
             }.padding(17).settingsCard()
             if images.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "square.3.layers.3d").font(.system(size: 35)).foregroundStyle(.secondary)
                     Text("A home for your installers").font(.system(size: 16, weight: .semibold))
-                    Text("ISO and IPSW files in Downloads and your machine packages appear here.")
+                    Text("ISO, IPSW and MacVM’s Ubuntu cloud images appear here.")
                         .font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.center).lineSpacing(3)
                 }.frame(maxWidth: .infinity).padding(.vertical, 38).settingsCard()
             } else {
@@ -118,7 +118,7 @@ struct SettingsView: View {
                     }.padding(17).settingsCard()
                 }
             }
-            Text("Linux installers have a copy inside the machine package. Turn off Boot from installer ISO in machine settings, then remove that copy while the machine is shut down. Files outside MacVM’s folders are only listed when you selected them for a machine.")
+            Text("Automatic Ubuntu machines have their own prepared disk; the downloaded cloud image can be removed after creation. Manual Linux installations keep an ISO copy in the machine package. Turn off Boot from installer ISO, then remove that copy while the machine is shut down.")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
         }
     }

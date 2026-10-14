@@ -14,6 +14,7 @@ public final class ImageDownloader: NSObject, URLSessionDataDelegate, @unchecked
     private let progress: @Sendable (Double?, Int64) -> Void
     private let configuration: URLSessionConfiguration
     private let requiredRemainingSpace: UInt64
+    private let allowedHosts: Set<String>?
     private let availableCapacity: @Sendable (URL) -> UInt64
     private var received: Int64 = 0
     private var expected: Int64 = 0
@@ -32,10 +33,12 @@ public final class ImageDownloader: NSObject, URLSessionDataDelegate, @unchecked
 
     public init(destination: URL, requiredRemainingSpace: UInt64 = 2 * VMStorage.gib,
                 configuration: URLSessionConfiguration = .ephemeral,
+                allowedHosts: Set<String>? = nil,
                 availableCapacity: @escaping @Sendable (URL) -> UInt64 = { VMStorage.availableBytes(at: $0) },
                 progress: @escaping @Sendable (Double?, Int64) -> Void) {
         self.destination = destination; self.progress = progress
         self.configuration = configuration; self.requiredRemainingSpace = requiredRemainingSpace
+        self.allowedHosts = allowedHosts
         self.availableCapacity = availableCapacity
     }
 
@@ -46,6 +49,7 @@ public final class ImageDownloader: NSObject, URLSessionDataDelegate, @unchecked
                 if cancelled { stateLock.unlock(); continuation.resume(throwing: CancellationError()); return }
                 self.continuation = continuation
                 do {
+                    guard allowsDownload(url) else { throw VMError.message("Choose an HTTPS link from Microsoft's download servers.") }
                     remoteURL = url
                     let descriptor = open(destination.path, O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC, 0o600)
                     guard descriptor >= 0 else { throw VMError.message("Cannot create a regular download file in Downloads.") }
@@ -86,10 +90,29 @@ public final class ImageDownloader: NSObject, URLSessionDataDelegate, @unchecked
         current?.cancel()
     }
 
+    private func allowsDownload(_ url: URL?) -> Bool {
+        guard let allowedHosts else { return true }
+        guard let url, url.scheme == "https", url.user == nil, url.password == nil,
+              url.port == nil || url.port == 443 else { return false }
+        return allowedHosts.contains(url.host?.lowercased() ?? "")
+    }
+
+    public func urlSession(_ session: URLSession, task: URLSessionTask,
+                           willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+                           completionHandler: @escaping (URLRequest?) -> Void) {
+        guard allowsDownload(request.url) else {
+            completionHandler(nil)
+            finish(.failure(VMError.message("The Windows download redirected outside Microsoft's download servers.")))
+            return
+        }
+        completionHandler(request)
+    }
+
     public func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
                            completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
         do {
             guard let http = response as? HTTPURLResponse else { throw VMError.message("The download server returned an invalid response.") }
+            guard allowsDownload(response.url) else { throw VMError.message("The Windows download redirected outside Microsoft's download servers.") }
             if http.statusCode == 206 {
                 guard offset > 0, let range = http.value(forHTTPHeaderField: "Content-Range"),
                       let parsed = Self.parseRange(range), parsed.start == offset, parsed.total > offset,
@@ -105,7 +128,7 @@ public final class ImageDownloader: NSObject, URLSessionDataDelegate, @unchecked
             let free = availableCapacity(destination.deletingLastPathComponent())
             let remaining = UInt64(expected - received)
             guard remaining <= free, requiredRemainingSpace <= free - remaining else {
-                throw VMError.message("Downloads does not have enough free space for the macOS image and installation.")
+                throw VMError.message("Downloads does not have enough free space for the image and installation.")
             }
             let etag = http.value(forHTTPHeaderField: "ETag")
             let newValidator = etag.flatMap { $0.hasPrefix("W/") ? nil : $0 } ?? http.value(forHTTPHeaderField: "Last-Modified")

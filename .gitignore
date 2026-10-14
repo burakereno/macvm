@@ -12,3 +12,4 @@ dist/
 *.macvm/
 .swiftpm/
 .local/
+__pycache__/

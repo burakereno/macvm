@@ -1,10 +1,12 @@
 import SwiftUI
 import MacVMCore
+import MacVMUI
 
 struct MachineRow: View {
     let entry: VMEntry
     @Bindable var library: LibraryStore
     @Environment(\.openWindow) private var openWindow
+    @State private var showSetupLog = false
     private var phase: RuntimePhase { library.phase(for: entry) }
     private var selected: Bool { library.selectedID == entry.id }
     private var inUse: Bool { library.isInUse(entry) }
@@ -12,7 +14,7 @@ struct MachineRow: View {
         switch phase {
         case .running: .green
         case .paused: .orange
-        case .starting, .installing, .stopping: .blue
+        case .starting, .installing, .provisioning, .stopping: .blue
         case .failed: .red
         case .stopped: .secondary
         }
@@ -21,9 +23,8 @@ struct MachineRow: View {
     var body: some View {
         HStack(spacing: 18) {
             ZStack(alignment: .bottomTrailing) {
-                Image(systemName: entry.record.system.symbol)
-                    .font(.system(size: 30, weight: .medium))
-                    .foregroundStyle(entry.record.system == .macOS ? Color.green : .orange)
+                GuestBrandIcon(brand: entry.record.displayBrand)
+                    .frame(width: 34, height: 36)
                     .frame(width: 42, height: 45)
                 Circle().fill(statusColor).frame(width: 10, height: 10)
                     .overlay(Circle().stroke(.background, lineWidth: 2)).offset(x: 2, y: 1)
@@ -37,7 +38,7 @@ struct MachineRow: View {
                     }
                 }
                 Text(detail).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
-                if phase == .installing, let progress = library.statuses[entry.id]?.progress {
+                if [.installing, .provisioning].contains(phase), let progress = library.statuses[entry.id]?.progress {
                     ProgressView(value: progress).frame(maxWidth: 220).controlSize(.mini)
                 }
             }.frame(maxWidth: .infinity, alignment: .leading)
@@ -45,11 +46,11 @@ struct MachineRow: View {
                 ProgressView().controlSize(.small).frame(width: 34)
             } else {
                 Button { library.primaryAction(entry) } label: {
-                    Image(systemName: phase == .running ? "pause.circle" : "play")
+                    Image(systemName: [.running, .provisioning].contains(phase) ? "pause.circle" : "play")
                         .font(.system(size: 21, weight: .regular)).frame(width: 34, height: 34)
                 }.buttonStyle(.plain)
-                    .help(phase == .running ? "Pause machine" : phase == .paused ? "Resume machine" : "Start machine")
-                    .accessibilityLabel(phase == .running ? "Pause \(entry.record.name)" : "Start or resume \(entry.record.name)")
+                    .help([.running, .provisioning].contains(phase) ? "Pause machine" : phase == .paused ? "Resume machine" : "Start machine")
+                    .accessibilityLabel([.running, .provisioning].contains(phase) ? "Pause \(entry.record.name)" : "Start or resume \(entry.record.name)")
             }
             Menu { actions } label: {
                 Image(systemName: "ellipsis").font(.system(size: 20, weight: .medium)).frame(width: 28, height: 34)
@@ -64,6 +65,7 @@ struct MachineRow: View {
         .onTapGesture(count: 2) { library.start(entry) }
         .onTapGesture { library.selectedID = entry.id }
         .contextMenu { actions }
+        .sheet(isPresented: $showSetupLog) { UbuntuSetupLogView(directory: entry.url) }
         .accessibilityElement(children: .contain)
     }
 
@@ -71,24 +73,33 @@ struct MachineRow: View {
         if library.busyIDs.contains(entry.id) { return "Working with this machine…" }
         if (phase.isActive || phase == .failed), let message = library.statuses[entry.id]?.message { return message }
         if phase == .stopping { return "Waiting for the guest to shut down…" }
-        let used = ByteCountFormatter.string(fromByteCount: VMStorage.allocatedBytes(at: entry.url.appendingPathComponent("Disk.img")), countStyle: .file)
+        let used = ByteCountFormatter.string(fromByteCount: VMStorage.allocatedBytes(at: entry.url.appendingPathComponent(entry.record.system.diskFilename)), countStyle: .file)
         return "\(entry.record.cpuCount) CPU · \(entry.record.memoryGB) GB RAM · \(used) of \(entry.record.diskGB) GB · \(entry.record.osVersion ?? entry.record.system.title)"
     }
 
     @ViewBuilder private var actions: some View {
         Button("Open", systemImage: "macwindow") { library.start(entry) }
-        if phase == .running { Button("Pause", systemImage: "pause") { library.send(.pause, to: entry) } }
+        if [.running, .provisioning].contains(phase) { Button("Pause", systemImage: "pause") { library.send(.pause, to: entry) } }
         if phase == .paused { Button("Resume", systemImage: "play") { library.send(.resume, to: entry) } }
-        if [.running, .paused, .stopping].contains(phase) {
+        if [.running, .provisioning, .paused, .stopping].contains(phase) {
             Button("Shut Down", systemImage: "power") { library.send(.shutdown, to: entry) }
             Button("Force Stop…", systemImage: "stop", role: .destructive) { library.confirmation = .init(entry: entry, kind: .forceStop) }
         }
         Divider()
+        if entry.record.ubuntuSetup != nil {
+            if inUse && entry.record.ubuntuSetup?.completed == false {
+                Button("Retry Ubuntu Setup", systemImage: "arrow.clockwise") { library.send(.retrySetup, to: entry) }
+                    .disabled(UbuntuProvisioning.read(record: entry.record, directory: entry.url)?.stage != .failed)
+            }
+            Button("View Setup Log…", systemImage: "doc.text") {
+                showSetupLog = true
+            }.disabled(!FileManager.default.fileExists(atPath: UbuntuProvisioning.folder(in: entry.url).appendingPathComponent("Setup.log").path))
+        }
         Button("Settings…", systemImage: "slider.horizontal.3") { library.settingsEntry = entry }.disabled(inUse)
         if entry.record.system == .macOS {
             Button("Guest Tools…", systemImage: "shippingbox") { openWindow(id: "guest-tools") }
         }
-        Button("Duplicate", systemImage: "plus.square.on.square") { library.duplicate(entry) }.disabled(inUse || entry.record.installationPending)
+        Button("Duplicate", systemImage: "plus.square.on.square") { library.duplicate(entry) }.disabled(entry.record.system == .windows || inUse || entry.record.installationPending || entry.record.ubuntuSetup?.completed == false)
         Menu("Move to Location", systemImage: "folder") {
             ForEach(library.locations) { location in
                 Button(location.name) { library.move(entry, to: location) }

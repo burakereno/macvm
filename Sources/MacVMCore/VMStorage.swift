@@ -24,6 +24,13 @@ public enum VMStorage {
         guard record.diskGB >= record.system.minimumDiskGB, record.diskGB <= 2048 else {
             throw VMError.message("Choose a disk between \(record.system.minimumDiskGB) GB and 2 TB.")
         }
+        try record.ubuntuSetup?.validate(record: record)
+        if record.system == .windows {
+            guard record.cpuCount >= 2, record.cpuCount <= 16, record.memoryGB >= 4, record.memoryGB <= 64,
+                  record.diskGB <= 512, !record.installationPending, record.ubuntuSetup == nil else {
+                throw VMError.message("Windows needs 2–16 CPUs, 4–64 GB RAM and a 64–512 GB disk.")
+            }
+        }
         let folders = record.sharedFolders ?? []
         guard folders.count <= 8, Set(folders.map(\.name)).count == folders.count,
               folders.allSatisfy({ !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.name.count <= 80 && !$0.name.contains("/") && !$0.name.contains("\0") && $0.name != "." && $0.name != ".." && $0.name != "MacVM Guest Tools" && $0.path.hasPrefix("/") && !$0.path.contains("\0") }) else {
@@ -32,6 +39,7 @@ public enum VMStorage {
     }
 
     public static func createEmptyBundle(record: VirtualMachineRecord, location: URL, staging: Bool = false) throws -> URL {
+        guard record.system != .windows else { throw VMError.message("Add an existing Windows machine to use the Windows engine.") }
         try validate(record)
         let destination = location.appendingPathComponent(staging ? ".\(record.id.uuidString).creating" : "\(record.id.uuidString).macvm")
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: false,
@@ -50,9 +58,10 @@ public enum VMStorage {
     }
 
     public static func clone(_ source: VMEntry, to location: URL) throws -> VMEntry {
+        guard source.record.system != .windows else { throw VMError.message("Windows duplication is not available yet. TPM identity must be preserved safely.") }
         let lock = try VMLock(directory: source.url)
         defer { withExtendedLifetime(lock) {} }
-        guard !source.record.installationPending else { throw VMError.message("Complete installation before duplicating this machine.") }
+        guard !source.record.installationPending, source.record.ubuntuSetup?.completed != false else { throw VMError.message("Complete installation before duplicating this machine.") }
         var record = try validateBundle(at: source.url)
         record.id = UUID(); record.name += " Copy"; record.createdAt = Date()
         record.macAddress = VirtualMachineRecord.randomMACAddress()
@@ -72,6 +81,9 @@ public enum VMStorage {
                 }
             }
             try VMConfigurationFactory.writeNewMachineIdentifier(to: destination, system: record.system)
+            if record.ubuntuSetup != nil {
+                try FileManager.default.createDirectory(at: UbuntuProvisioning.folder(in: destination), withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+            }
             try record.save(to: destination)
             let published = location.appendingPathComponent(record.id.uuidString).appendingPathExtension("macvm")
             try FileManager.default.moveItem(at: destination, to: published)
@@ -85,11 +97,38 @@ public enum VMStorage {
         // Packages may come from a more powerful Mac. Allow them into the
         // library so resources can be reduced before the runtime host check.
         try validate(record, hostCPUs: 512, hostMemory: 8192 * gib)
-        let required = record.system == .macOS ? ["Disk.img", "HardwareModel", "MachineIdentifier", "AuxiliaryStorage"] : ["Disk.img", "EFI.nvram"]
+        let required = record.system == .macOS ? ["Disk.img", "HardwareModel", "MachineIdentifier", "AuxiliaryStorage"] : record.system == .windows ? ["Disk.qcow2", "EFI.fd"] : ["Disk.img", "EFI.nvram"]
         for filename in required {
             let file = url.appendingPathComponent(filename)
             let values = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
             guard values.isRegularFile == true, values.isSymbolicLink != true else { throw VMError.message("The machine package contains an invalid \(filename) file.") }
+        }
+        if record.system == .windows {
+            let file = try FileHandle(forReadingFrom: url.appendingPathComponent("Disk.qcow2"))
+            defer { try? file.close() }
+            let header = try file.read(upToCount: 104) ?? Data()
+            guard header.count == 104, QCOW2.number(header, 0, 4) == 0x514649fb,
+                  [2, 3].contains(QCOW2.number(header, 4, 4)),
+                  QCOW2.number(header, 8, 8) == 0, QCOW2.number(header, 16, 4) == 0,
+                  QCOW2.number(header, 32, 4) == 0,
+                  QCOW2.number(header, 24, 8) == UInt64(record.diskGB) * gib,
+                  QCOW2.number(header, 4, 4) != 3 || QCOW2.number(header, 72, 8) & ~UInt64(1) == 0 else {
+                throw VMError.message("Windows requires a standalone QCOW2 disk without external backing files or unsupported features.")
+            }
+            let tpm = url.appendingPathComponent("TPM")
+            let values = try tpm.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            guard values.isDirectory == true, values.isSymbolicLink != true,
+                  let files = FileManager.default.enumerator(at: tpm, includingPropertiesForKeys: [.isSymbolicLinkKey, .isRegularFileKey]) else {
+                throw VMError.message("The Windows TPM state is missing or invalid.")
+            }
+            for case let child as URL in files {
+                let values = try child.resourceValues(forKeys: [.isSymbolicLinkKey, .isRegularFileKey])
+                guard values.isRegularFile == true, values.isSymbolicLink != true else { throw VMError.message("The Windows TPM contains an invalid file.") }
+            }
+            let permanent = try tpm.appendingPathComponent("tpm2-00.permall").resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+            guard permanent.isRegularFile == true, permanent.isSymbolicLink != true, (permanent.fileSize ?? 0) > 0 else {
+                throw VMError.message("The Windows TPM identity is missing. Restore it from a backup before starting this machine.")
+            }
         }
         return record
     }

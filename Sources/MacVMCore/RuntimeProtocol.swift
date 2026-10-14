@@ -2,8 +2,8 @@ import Foundation
 import Darwin
 
 public enum RuntimePhase: String, Codable, Sendable {
-    case stopped, starting, installing, running, paused, stopping, failed
-    public var title: String { rawValue.capitalized }
+    case stopped, starting, installing, provisioning, running, paused, stopping, failed
+    public var title: String { self == .provisioning ? "Setting up Ubuntu" : rawValue.capitalized }
     public var isActive: Bool { ![.stopped, .failed].contains(self) }
 }
 
@@ -28,7 +28,7 @@ public struct RuntimeStatus: Codable, Sendable {
     }
 }
 
-public enum RuntimeAction: String, Codable { case pause, resume, shutdown, forceStop, show }
+public enum RuntimeAction: String, Codable { case pause, resume, shutdown, forceStop, show, retrySetup }
 
 public struct RuntimeCommand: Codable {
     public var action: RuntimeAction

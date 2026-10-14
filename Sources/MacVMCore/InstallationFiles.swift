@@ -39,7 +39,9 @@ public enum InstallationFiles {
     public static var downloads: URL { FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0] }
     private static func isInstaller(_ url: URL) -> Bool {
         ["iso", "ipsw"].contains(url.pathExtension.lowercased()) ||
-        (url.lastPathComponent.hasPrefix("MacVM-macOS-") && url.lastPathComponent.hasSuffix(".ipsw.download"))
+        (url.lastPathComponent.hasPrefix("MacVM-macOS-") && url.lastPathComponent.hasSuffix(".ipsw.download")) ||
+        (url.lastPathComponent.hasPrefix("MacVM-Windows-") && url.lastPathComponent.hasSuffix(".iso.download")) ||
+        url.lastPathComponent.range(of: "^MacVM-Ubuntu-(24\\.04|26\\.04)-[a-f0-9]{12}-arm64\\.(img|tar\\.gz)(\\.download)?$", options: .regularExpression) != nil
     }
 
     public static func list(downloads: URL = Self.downloads, legacyCaches: [URL], entries: [VMEntry]) -> [InstallationFile] {
@@ -49,7 +51,7 @@ public enum InstallationFiles {
             candidates.formUnion(files.filter { isInstaller($0) }.map(\.standardizedFileURL))
         }
         for entry in entries {
-            if entry.record.system == .linux { candidates.insert(entry.url.appendingPathComponent("Installer.iso").standardizedFileURL) }
+            if entry.record.system != .macOS { candidates.insert(entry.url.appendingPathComponent("Installer.iso").standardizedFileURL) }
             for path in [entry.record.restoreImagePath, entry.record.sourceImagePath].compactMap({ $0 }) {
                 candidates.insert(URL(fileURLWithPath: path).standardizedFileURL)
             }
@@ -88,7 +90,7 @@ public enum InstallationFiles {
         let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
         guard isInstaller(url),
               values.isRegularFile == true, values.isSymbolicLink != true else {
-            throw VMError.message("Choose a regular ISO or IPSW installation file.")
+            throw VMError.message("Choose a regular ISO, IPSW or managed Ubuntu installation file.")
         }
         let package = entries.first { $0.url.appendingPathComponent("Installer.iso").standardizedFileURL == url.standardizedFileURL }
         let vmLock = try package.map { try VMLock(directory: $0.url) }

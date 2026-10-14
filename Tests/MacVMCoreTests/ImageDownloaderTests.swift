@@ -7,8 +7,8 @@ private final class ImageProtocol: URLProtocol, @unchecked Sendable {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() { Self.handle?(request, self) }
     override func stopLoading() {}
-    func reply(status: Int, headers: [String: String], body: Data, error: Error? = nil) {
-        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers)!, cacheStoragePolicy: .notAllowed)
+    func reply(status: Int, headers: [String: String], body: Data, error: Error? = nil, responseURL: URL? = nil) {
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: responseURL ?? request.url!, statusCode: status, httpVersion: "HTTP/1.1", headerFields: headers)!, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: body)
         // A short body models an interrupted transfer. URLProtocol discards its
         // buffered body on didFailWithError, unlike an actual TCP connection.
@@ -24,10 +24,22 @@ final class ImageDownloaderTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     }
     override func tearDownWithError() throws { ImageProtocol.handle = nil; try FileManager.default.removeItem(at: root) }
-    private func downloader(capacity: UInt64 = 1_000_000) -> ImageDownloader {
+    private func downloader(capacity: UInt64 = 1_000_000, allowedHosts: Set<String>? = nil) -> ImageDownloader {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [ImageProtocol.self]
         return ImageDownloader(destination: root.appendingPathComponent("MacVM-macOS-test.ipsw.download"), requiredRemainingSpace: 0,
-                               configuration: config, availableCapacity: { _ in capacity }, progress: { _, _ in })
+                               configuration: config, allowedHosts: allowedHosts, availableCapacity: { _ in capacity }, progress: { _, _ in })
+    }
+    func testMicrosoftDownloadCannotConsumeAnUntrustedResponse() async throws {
+        let official = URL(string: "https://download.microsoft.com/test.iso")!
+        ImageProtocol.handle = { _, connection in
+            connection.reply(status: 200, headers: ["Content-Length":"4"], body: Data("evil".utf8), responseURL: URL(string: "https://outside.example/test.iso")!)
+        }
+        do { _ = try await downloader(allowedHosts: ["download.microsoft.com"]).download(official); XCTFail("Must reject outside response") } catch {}
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent("MacVM-macOS-test.ipsw.download")).count, 0)
+        ImageProtocol.handle = { _, _ in XCTFail("Disallowed initial URLs must not make a request") }
+        for url in ["http://download.microsoft.com/test.iso", "https://user:password@download.microsoft.com/test.iso", "https://outside.example/test.iso"] {
+            do { _ = try await downloader(allowedHosts: ["download.microsoft.com"]).download(URL(string: url)!); XCTFail("Must reject \(url)") } catch {}
+        }
     }
     func testBrokenSymlinkCannotCreateAFileOutsideDownloads() async throws {
         let outside = root.appendingPathComponent("outside")

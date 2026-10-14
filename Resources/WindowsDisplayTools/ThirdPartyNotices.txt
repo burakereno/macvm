@@ -1,0 +1,32 @@
+MacVM Windows Tools third-party components
+
+VirtIO GPU, network and serial drivers
+Red Hat and contributors. The original BSD licence notice is in LICENSE.txt.
+Driver binaries are Microsoft Windows Hardware Compatibility Publisher signed.
+Source: https://github.com/virtio-win/kvm-guest-drivers-windows
+Matching driver distribution: UTM Guest Tools 0.1.273, viogpudo/2k25/ARM64,
+vioserial/2k25/ARM64 and NetKVM/2k25/ARM64.
+
+SPICE Windows VDAgent / VDService 0.10.0
+Copyright (C) 2009 Red Hat, Inc. and subsequent contributors.
+GNU General Public License version 2 or later; see LICENSE-GPL-2.0.txt.
+Source: https://gitlab.freedesktop.org/spice/win32/vd_agent
+MacVM builds these separate guest executables from pinned upstream sources.
+The source revision and binary hashes are recorded in SourceProvenance.json.
+MacVM offers text clipboard capabilities only, with file transfer disabled.
+
+SPICE WebDAV ARM64
+Derived from phodav 2.5 by the UTM project.
+Copyright Red Hat, Inc. and contributors; GNU Lesser General Public License
+version 2.1 or later; see LICENSE-LGPL-2.1.txt.
+Source/build project: https://github.com/utmapp/spice-webdavd-arm64
+MacVM builds the ARM64 port against pinned vcpkg dependency sources. Original
+notices for the actual linked libraries are in Licenses. The build recipe,
+matching upstream archives and patches are included in the public
+MacVM-Windows-Sources.tar.gz release asset, together with engine sources.
+SourceProvenance.json lists revisions, installed dependencies and binary hashes.
+GLib libraries remain dynamically linked and can be replaced by rebuilt DLLs.
+
+Microsoft Visual C++ runtime is not included on this CD. When required, the
+guest installer downloads it from Microsoft, verifies Microsoft's signature
+and opens Microsoft's licence installer for the user to review.

@@ -84,6 +84,7 @@ final class LibraryStore {
             }
             seen.insert(record.id)
             found.append(VMEntry(record: record, url: url))
+            if record.ubuntuSetup?.completed == true { UbuntuProvisioning.cleanupSeedAfterStop(at: url) }
             if VMLock.isHeld(at: url) { active.insert(record.id) }
             if let status = RuntimeStatus.load(from: url) { runtime[record.id] = status }
         }
@@ -133,7 +134,7 @@ final class LibraryStore {
 
     func primaryAction(_ entry: VMEntry) {
         switch phase(for: entry) {
-        case .running: send(.pause, to: entry)
+        case .running, .provisioning: send(.pause, to: entry)
         case .paused: send(.resume, to: entry)
         case .stopped, .failed: start(entry)
         default: send(.show, to: entry)
@@ -226,7 +227,7 @@ final class LibraryStore {
                 try await Task.detached(priority: .userInitiated) {
                     let lock = try VMLock(directory: entry.url)
                     defer { withExtendedLifetime(lock) {} }
-                    guard VMStorage.availableBytes(at: location.url) > UInt64(max(0, VMStorage.allocatedBytes(at: entry.url.appendingPathComponent("Disk.img")))) + VMStorage.gib else {
+                    guard VMStorage.availableBytes(at: location.url) > UInt64(max(0, VMStorage.allocatedBytes(at: entry.url.appendingPathComponent(entry.record.system.diskFilename)))) + VMStorage.gib else {
                         throw VMError.message("There is not enough free space at the destination.")
                     }
                     let staging = location.url.appendingPathComponent(".\(entry.id.uuidString).moving")

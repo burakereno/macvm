@@ -7,11 +7,30 @@ import MacVMUI
 @main
 struct RunnerApp {
     @MainActor static func main() {
-        let app = NSApplication.shared
-        let delegate = RunnerDelegate()
+        let app = RunnerApplication.shared
+        let arguments = CommandLine.arguments
+        let windows: Bool
+        if let index = arguments.firstIndex(of: "--bundle"), arguments.indices.contains(index + 1),
+           let record = try? VirtualMachineRecord.load(from: URL(fileURLWithPath: arguments[index + 1])) {
+            windows = record.system == .windows
+        } else { windows = false }
+        let delegate: NSApplicationDelegate = windows ? WindowsRunnerDelegate() : RunnerDelegate()
         app.delegate = delegate
         app.setActivationPolicy(.regular)
         withExtendedLifetime(delegate) { app.run() }
+    }
+}
+
+/// AppKit can consume Command-key releases as menu events. A guest that
+/// received the press must also receive the release, or its key repeats forever.
+@MainActor
+final class RunnerApplication: NSApplication {
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyUp, let display = keyWindow?.firstResponder as? WindowsDisplayView {
+            display.keyUp(with: event)
+            return
+        }
+        super.sendEvent(event)
     }
 }
 
@@ -57,6 +76,8 @@ final class RunnerDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @
             lock = try VMLock(directory: directory)
             try? FileManager.default.removeItem(at: directory.appendingPathComponent("Command.json"))
             record = try VMStorage.validateBundle(at: directory)
+            // This runner has its own Dock tile; the library app keeps MacVM's icon.
+            NSApp.applicationIconImage = GuestBrandArtwork.dockIcon(for: record.displayBrand)
             let toolsURL = Bundle.main.resourceURL?.appendingPathComponent("GuestTools", isDirectory: true)
             let configuration = try VMConfigurationFactory.make(record: record, directory: directory,
                 guestToolsURL: toolsURL.flatMap { FileManager.default.fileExists(atPath: $0.path) ? $0 : nil })
@@ -444,6 +465,19 @@ final class RunnerDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @
             }
         }
         if phase == .installing { publish(.installing, progress: installer?.progress.fractionCompleted) }
+        if machine?.state == .running, record.ubuntuSetup?.completed == false, !operationInFlight, !shutdownWait.isPending {
+            let status = UbuntuProvisioning.read(record: record, directory: directory)
+            if status?.stage == .ready {
+                var completed = record!
+                completed.ubuntuSetup?.completed = true
+                completed.osVersion = status?.osVersion ?? record.osVersion
+                do { try completed.save(to: directory); record = completed; publish(.running, message: "Ubuntu setup completed") }
+                catch { publish(.running, message: "Ubuntu is ready, but its setup state could not be saved: " + error.localizedDescription) }
+            } else {
+                let stage = status?.stage ?? .starting
+                publish(.provisioning, progress: stage == .failed ? nil : stage.progress, message: stage.title)
+            }
+        }
         if let machine {
             guestToolsReminder?.poll(machine: machine, system: record.system, phase: phase,
                                      restoring: installer != nil,
@@ -460,10 +494,13 @@ final class RunnerDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @
         guard let command = try? JSONDecoder().decode(RuntimeCommand.self, from: data), command.session == session else { return }
         switch command.action {
         case .show: window?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
-        case .pause: if phase == .running { togglePause() }
+        case .pause: if phase == .running || phase == .provisioning { togglePause() }
         case .resume: if phase == .paused { togglePause() }
         case .shutdown: shutdown()
         case .forceStop: forceStop()
+        case .retrySetup:
+            do { try UbuntuProvisioning.requestRetry(record: record, directory: directory) }
+            catch { report(error) }
         }
     }
 
@@ -473,6 +510,7 @@ final class RunnerDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @
         let status = RuntimeStatus(phase: phase, session: session, progress: progress, message: lastMessage)
         try? status.save(to: directory)
         window?.subtitle = phase == .installing ? "Installing macOS · \(Int((progress ?? 0) * 100))%" : phase.title
+        if phase == .provisioning { window?.subtitle = message ?? phase.title }
         if shutdownWait.isPending { window?.subtitle = "Waiting for guest to shut down…" }
         else if shutdownTimedOut { window?.subtitle = "Shutdown timed out · \(phase.title)" }
         pauseItem?.image = NSImage(systemSymbolName: phase == .paused ? "play" : "pause", accessibilityDescription: phase == .paused ? "Resume" : "Pause")
@@ -481,7 +519,7 @@ final class RunnerDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, @
     }
 
     private var canTogglePause: Bool {
-        installer == nil && !terminating && !operationInFlight && (phase == .running || phase == .paused)
+        installer == nil && !terminating && !operationInFlight && [.running, .provisioning, .paused].contains(phase)
     }
     private var livePhase: RuntimePhase {
         switch machine?.state {

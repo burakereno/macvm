@@ -19,9 +19,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  windows-helpers:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/windows-guest-helpers.yml
   release:
+    needs: windows-helpers
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
       MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
       MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
@@ -89,16 +94,27 @@ jobs:
           echo "INSTALLER_KEYCHAIN=$INSTALLER_KEYCHAIN" >> "$GITHUB_ENV"
           echo "NOTARY_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
           xcrun notarytool store-credentials macvm-release --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --keychain "$KEYCHAIN"
+      - uses: actions/download-artifact@v4
+        with:
+          name: MacVM-Windows-Guest-Helpers
+          path: ${{ runner.temp }}/windows-guest-build
+      - name: Prepare bundled Windows engine and signed ARM64 Tools
+        env:
+          WINDOWS_GUEST_HELPERS_DIR: ${{ runner.temp }}/windows-guest-build/windows-guest-helpers
+        run: ./scripts/prepare-windows-engine.sh
       - name: Test and build
         env:
           CONFIGURATION: release
           REQUIRE_GUEST_TOOLS_RELEASE_TRUST: '1'
           GUEST_TOOLS_NOTARY_PROFILE: macvm-release
+          REQUIRE_WINDOWS_ENGINE: '1'
         run: |
           swift test
+          xcrun xctest "$(swift build --show-bin-path)/WindowsPrototypeTests.xctest"
           ./scripts/verify-downloads.sh
           ./scripts/verify-update-installer.sh
           ./scripts/build-app.sh
+          python3 ./scripts/verify-windows-engine.py dist/MacVM.app/Contents/Resources/Helpers/MacVMRunner.app/Contents/Resources/WindowsEngine
           PLIST="dist/$APP_BUNDLE_NAME/Contents/Info.plist"
           [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")" == "$APP_VERSION" ]]
           [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")" == "$BUNDLE_IDENTIFIER" ]]
@@ -142,6 +158,7 @@ jobs:
             dist/${{ env.DMG_ASSET_NAME }}
             dist/${{ env.MANIFEST_ASSET_NAME }}
             dist/${{ env.GUEST_TOOLS_ASSET_NAME }}
+            dist/MacVM-Windows-Sources.tar.gz
           if-no-files-found: error
       - name: Publish verified release
         if: ${{ inputs.publish }}
@@ -150,7 +167,7 @@ jobs:
         run: |
           git tag "v$APP_VERSION"
           git push origin "v$APP_VERSION"
-          gh release create "v$APP_VERSION" "dist/$DMG_ASSET_NAME" "dist/$MANIFEST_ASSET_NAME" "dist/$GUEST_TOOLS_ASSET_NAME" --verify-tag --title "MacVM $APP_VERSION" --notes-file docs/release-notes.md
+          gh release create "v$APP_VERSION" "dist/$DMG_ASSET_NAME" "dist/$MANIFEST_ASSET_NAME" "dist/$GUEST_TOOLS_ASSET_NAME" dist/MacVM-Windows-Sources.tar.gz --verify-tag --title "MacVM $APP_VERSION" --notes-file docs/release-notes.md
       - name: Remove temporary signing material
         if: always()
         run: |

@@ -13,6 +13,15 @@ if pgrep -x MacVMRunner >/dev/null; then
     echo "Shut down running MacVM machines before rebuilding the app bundle." >&2
     exit 1
 fi
+if pgrep -x MacVMWindowsEngine >/dev/null; then
+    echo "Shut down Windows before rebuilding the app bundle." >&2
+    exit 1
+fi
+if [[ "${REQUIRE_WINDOWS_ENGINE:-0}" == 1 ]]; then
+    WINDOWS_TOOLS_CACHE="$HOME/Library/Application Support/MacVM/Engines/Windows Display Tools"
+    python3 scripts/verify-windows-guest-helpers.py "$WINDOWS_TOOLS_CACHE/GuestHelpers" "$WINDOWS_TOOLS_CACHE/GuestSources.zip" \
+        --tools-iso "$WINDOWS_TOOLS_CACHE/DisplayTools.iso" --tools-receipt "$WINDOWS_TOOLS_CACHE/DisplayTools.json"
+fi
 swift build -c "$CONFIGURATION"
 BIN_DIR="$(swift build -c "$CONFIGURATION" --show-bin-path)"
 if [[ ! -f .build/MacVM.icns || scripts/generate-icon.swift -nt .build/MacVM.icns ]]; then
@@ -27,6 +36,18 @@ RUNNER="$APP_BUNDLE/Contents/Resources/Helpers/MacVMRunner.app"
 mkdir -p "$RUNNER/Contents/MacOS" "$RUNNER/Contents/Resources"
 cp "$BIN_DIR/MacVMRunner" "$RUNNER/Contents/MacOS/MacVMRunner"
 cp .build/MacVM.icns "$RUNNER/Contents/Resources/MacVM.icns"
+# Build dependencies come from Homebrew; all runtime dependencies live in the app.
+WINDOWS_FIRMWARE="$HOME/Library/Application Support/MacVM/Engines/Windows Prototype/edk2-aarch64-secure-code.fd"
+if [[ -x /opt/homebrew/bin/qemu-system-aarch64 && -x /opt/homebrew/bin/swtpm && -f "$WINDOWS_FIRMWARE" ]]; then
+    ENGINE_DIR="$RUNNER/Contents/Resources/WindowsEngine"
+    mkdir -p "$ENGINE_DIR"
+    python3 scripts/bundle-windows-engine.py "$ENGINE_DIR" --firmware "${WINDOWS_FIRMWARE%/*}" --identity "$CODESIGN_IDENTITY"
+    DISPLAY_TOOLS="$HOME/Library/Application Support/MacVM/Engines/Windows Display Tools/DisplayTools.iso"
+    if [[ -f "$DISPLAY_TOOLS" ]]; then cp "$DISPLAY_TOOLS" "$ENGINE_DIR/DisplayTools.iso";
+    elif [[ "${REQUIRE_WINDOWS_ENGINE:-0}" == 1 ]]; then echo 'Windows Tools are required for this build.' >&2; exit 1; fi
+elif [[ "${REQUIRE_WINDOWS_ENGINE:-0}" == 1 ]]; then
+    echo 'Windows engine and Secure Boot firmware are required for this build.' >&2; exit 1
+fi
 export APP_VERSION APP_BUILD_NUMBER
 ./scripts/build-guest-tools.sh "$BIN_DIR/MacVMGuest" "$RUNNER/Contents/Resources/GuestTools"
 export APP_BUNDLE RUNNER APP_VERSION APP_BUILD_NUMBER BUNDLE_IDENTIFIER

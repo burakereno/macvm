@@ -47,6 +47,23 @@ final class InstallationFilesTests: XCTestCase {
         XCTAssertThrowsError(try InstallationFiles.moveToTrash(symlink, entries: [], trash: { _ in XCTFail() }))
         XCTAssertThrowsError(try InstallationFiles.moveToTrash(disk, entries: [], trash: { _ in XCTFail() }))
     }
+    func testManagedUbuntuDisksAndPartialsAreRemovableButVMDiskIsNot() throws {
+        let image = root.appendingPathComponent("MacVM-Ubuntu-26.04-123456abcdef-arm64.img")
+        let partial = image.appendingPathExtension("download")
+        let disk = root.appendingPathComponent("Disk.img")
+        for url in [image, partial, disk] { try Data(repeating: 1, count: 512).write(to: url) }
+        let files = InstallationFiles.list(downloads: root, legacyCaches: [], entries: [])
+        XCTAssertEqual(Set(files.map(\.url)), [image, partial])
+        var lease: ImageLease? = try ImageLease(url: image)
+        XCTAssertNotNil(InstallationFiles.deletionBlocker(partial, entries: []))
+        lease = nil
+        withExtendedLifetime(lease) {}
+        try InstallationFiles.moveToTrash(image, entries: [], trash: { try FileManager.default.removeItem(at: $0) })
+        XCTAssertFalse(FileManager.default.fileExists(atPath: image.path))
+        XCTAssertThrowsError(try InstallationFiles.moveToTrash(disk, entries: [], trash: { try FileManager.default.removeItem(at: $0) }))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: disk.path))
+    }
+
     func testSpaceChecksBothVolumesAndCombinedFootprint() {
         let g = VMStorage.gib
         XCTAssertNotNil(InstallationSpace.problem(system: .macOS, downloading: true, vmFree: 80*g, downloadsFree: 80*g, sameVolume: true))

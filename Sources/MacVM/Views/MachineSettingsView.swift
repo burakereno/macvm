@@ -26,19 +26,29 @@ struct MachineSettingsView: View {
                     Stepper("CPU cores: \(record.cpuCount)", value: $record.cpuCount, in: 1...ProcessInfo.processInfo.activeProcessorCount)
                     Stepper("Memory: \(record.memoryGB) GB", value: $record.memoryGB, in: 2...max(2, Int(ProcessInfo.processInfo.physicalMemory / VMStorage.gib) - 2))
                     LabeledContent("Disk capacity", value: "\(record.diskGB) GB")
-                    LabeledContent("Space on this Mac", value: ByteCountFormatter.string(fromByteCount: VMStorage.allocatedBytes(at: entry.url.appendingPathComponent("Disk.img")), countStyle: .file))
+                    LabeledContent("Space on this Mac", value: ByteCountFormatter.string(fromByteCount: VMStorage.allocatedBytes(at: entry.url.appendingPathComponent(entry.record.system.diskFilename)), countStyle: .file))
                     Toggle("Internet access (NAT)", isOn: $record.networkEnabled)
+                    if record.system == .windows { Toggle("Sound output", isOn: Binding(get: { record.audioEnabled ?? true }, set: { record.audioEnabled = $0 })) }
                 }
-                if record.system == .linux {
+                if let setup = record.ubuntuSetup {
+                    Section("Ubuntu setup") {
+                        LabeledContent("Profile", value: setup.profile.title)
+                        LabeledContent("Account", value: setup.username)
+                        LabeledContent("Setup", value: setup.completed ? "Completed" : "Completes on first boot")
+                    }
+                } else if record.system == .linux || record.system == .windows {
                     Section {
-                        Toggle("Boot from installer ISO", isOn: $record.bootFromInstaller)
+                        Toggle("Boot from installer ISO", isOn: Binding(get: { record.bootFromInstaller }, set: { value in
+                            record.bootFromInstaller = value
+                            if record.system == .windows && !value { record.windowsInstallationPending = false }
+                        }))
                     } footer: {
-                        Text("After installing Linux, shut down the machine and turn this off to boot from its virtual disk.")
+                        Text("After installing \(record.system.title), shut down the machine and turn this off to boot from its virtual disk. Remove unused ISO files in Settings → Installation Files.")
                     }
                 }
                 Section("Sharing") {
                     Toggle("Share clipboard", isOn: Binding(get: { record.clipboardSharingEnabled == true }, set: { record.clipboardSharingEnabled = $0 }))
-                    Text(record.system == .macOS ? "Text clipboard sharing requires the included Guest Tools. Only the active VM window shares your clipboard." : "Clipboard sharing requires spice-vdagent inside Linux. Ubuntu: sudo apt install spice-vdagent, then sign out and in.").font(.caption).foregroundStyle(.secondary)
+                    Text(record.system == .windows ? "Text clipboard and shared folders require Windows Tools. In the running VM, choose Virtual Machine → Install Windows Tools. Only the active VM window shares your clipboard." : record.system == .macOS ? "Text clipboard sharing requires the included Guest Tools. Only the active VM window shares your clipboard." : "Clipboard sharing requires spice-vdagent inside Linux. Ubuntu: sudo apt install spice-vdagent, then sign out and in.").font(.caption).foregroundStyle(.secondary)
                     ForEach(record.sharedFolders ?? []) { folder in
                         VStack(alignment: .leading, spacing: 5) {
                             HStack {
@@ -53,7 +63,7 @@ struct MachineSettingsView: View {
                         }
                     }
                     Button("Add Shared Folder…", action: addSharedFolder).disabled((record.sharedFolders ?? []).count >= 8)
-                    Text(record.system == .macOS ? "Shared folders appear in Finder → My Shared Files after starting the machine." : "In Linux, mount the share once: sudo mkdir -p /mnt/macvm; sudo mount -t virtiofs macvm-share /mnt/macvm").font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                    Text(verbatim: record.system == .windows ? "In Windows Explorer, enter \\\\localhost@9843\\DavWWWRoot. Windows Tools must be installed. File uploads are limited to 128 MB per file." : record.system == .macOS ? "Shared folders appear in Finder → My Shared Files after starting the machine." : "In Linux, mount the share once: sudo mkdir -p /mnt/macvm; sudo mount -t virtiofs macvm-share /mnt/macvm").font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                 }
                 if record.installationPending {
                     Section("macOS installation") {

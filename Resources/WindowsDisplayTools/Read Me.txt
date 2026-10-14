@@ -1,0 +1,78 @@
+MacVM Windows Tools for Windows ARM64
+
+In the VM window choose Virtual Machine > Install Windows Tools. In Windows,
+open the MacVM Tools CD, right-click Install.cmd and Run as administrator.
+The CD installs the ARM64 network/serial drivers, clipboard agent, shared-folder
+helper and matching display driver/service. Restart Windows when it finishes.
+MacVM's Windows Tools Status menu shows whether the clipboard agent connected.
+MacVM reminds you if Tools are unavailable after setup; no reminder interrupts
+Windows Setup. Tools do not activate Windows or supply a Windows licence.
+
+Text clipboard is off until enabled in MacVM Machine Settings > Sharing.
+Clipboard changes pass only while that VM is foreground and the Mac session
+is unlocked. File clipboard transfer is not enabled.
+Add folders in the same Sharing settings. They are read-only by default.
+Restart the VM after changing its sharing settings. Open this path in Explorer:
+\\localhost@9843\DavWWWRoot
+Only selected folders appear. Uploads have a 128 MB per-file limit.
+The host does not open a network listener. Windows' WebDAV helper uses its
+own loopback connection and a private virtio-serial channel to the host.
+
+Sound output can be enabled in Machine Settings. It uses the Windows HDA
+driver and does not grant microphone access. Windows' own volume applies.
+
+If Microsoft Visual C++ ARM64 is missing, the installer downloads it directly
+from Microsoft, checks its publisher signature and opens its licence installer.
+Review that installer and finish it before continuing. MacVM does not include
+or redistribute the Visual C++ runtime. No restart is forced by MacVM Tools.
+Installation log: C:\Program Files\MacVM Windows Tools\Install.log;
+display setup has its own log in MacVM Display Tools.
+Clipboard and folder helpers are built from pinned upstream sources by MacVM.
+SourceProvenance.json records their exact revisions, dependencies and hashes.
+Original notices are in Licenses; complete matching sources and build recipes
+are in the MacVM-Windows-Sources.tar.gz asset alongside the MacVM release.
+
+This is the matching ARM64 VirtIO GPU driver (100.100.104.27100) and
+resolution service from UTM Guest Tools 0.1.273 (viogpudo/2k25/ARM64,
+virtio-win, Red Hat). They let Windows apply the physical pixel dimensions
+requested by MacVM when you resize its window or enter/leave full screen.
+The older UTM 22.7.38.43 driver does not support this service's protocol.
+
+Right-click Install.cmd and choose Run as administrator. The installer checks
+all payload hashes and Microsoft hardware signatures before changing drivers
+or registering the automatic VioGpu resolution service.
+When upgrading the older driver, the installer first exports it and asks you
+to Restart Windows. Run Install.cmd again after that restart to finish.
+Use Restart, not Shut down: Windows Fast Startup can keep the old driver loaded.
+The installer never forces a restart or removes a running legacy driver.
+After verifying the matching driver and running service, it disables the
+duplicate Basic Display fallback on ARM64. This lets the VirtIO display own
+the login screen and lets the service find the correct adapter after login.
+Restart after installation and verify resolution by resizing the VM window.
+Windows display scaling (for example 200%) remains your choice.
+
+Sources:
+https://github.com/utmapp/qemu/releases/tag/v10.0.12-utm
+https://github.com/virtio-win/kvm-guest-drivers-windows/tree/master/viogpu
+https://github.com/virtio-win/kvm-guest-drivers-windows/issues/1391
+https://github.com/utmapp/spice-nsis/blob/main/win-guest-tools.nsis
+https://gitlab.freedesktop.org/spice/win32/vd_agent
+https://github.com/utmapp/spice-webdavd-arm64
+
+Uninstall from an Administrator command prompt:
+"C:\Program Files\MacVM Display Tools\vgpusrv.exe" -s
+"C:\Program Files\MacVM Display Tools\vgpusrv.exe" -u
+Then delete C:\Program Files\MacVM Display Tools.
+This removes the helper only; the signed display driver remains installed.
+For clipboard integration, stop and delete the vdservice service only if its
+binary path is C:\Program Files\MacVM Windows Tools\vdservice.exe. Remove
+the spice-webdavd service only if its binary path is
+C:\Program Files\MacVM Windows Tools\WebDAV\spice-webdavd.exe to uninstall
+folder integration. Then remove C:\Program Files\MacVM Windows Tools.
+Do not remove another application's SPICE services. Network and serial
+drivers may be retained by other VMs; their uninstall is a separate action.
+Before manually uninstalling the display driver, re-enable the firmware
+fallback from an Administrator command prompt, then Restart Windows:
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\GraphicsDrivers\BasicDisplay" /v DisableBasicDisplayFallback /t REG_DWORD /d 0 /f
+If migration is cancelled after its first step, restore the old service with:
+sc.exe config VioGpuDod start= demand

@@ -1,11 +1,12 @@
 import Foundation
 
 public enum GuestSystem: String, Codable, CaseIterable, Identifiable, Sendable {
-    case macOS, linux
+    case macOS, linux, windows
     public var id: String { rawValue }
-    public var title: String { self == .macOS ? "macOS" : "Linux" }
-    public var symbol: String { self == .macOS ? "apple.logo" : "terminal" }
-    public var minimumDiskGB: Int { self == .macOS ? 64 : 16 }
+    public var title: String { self == .macOS ? "macOS" : self == .windows ? "Windows" : "Linux" }
+    public var symbol: String { self == .macOS ? "apple.logo" : self == .windows ? "square.grid.2x2.fill" : "terminal" }
+    public var minimumDiskGB: Int { self == .linux ? 16 : 64 }
+    public var diskFilename: String { self == .windows ? "Disk.qcow2" : "Disk.img" }
 }
 
 public struct VirtualMachineRecord: Codable, Identifiable, Equatable, Sendable {
@@ -24,8 +25,13 @@ public struct VirtualMachineRecord: Codable, Identifiable, Equatable, Sendable {
     public var restoreImagePath: String?
     public var osVersion: String?
     public var sourceImagePath: String?
+    /// Optional string keeps older packages readable and unknown future brands safe.
+    public var guestBrand: String?
+    public var ubuntuSetup: UbuntuSetup?
     public var clipboardSharingEnabled: Bool?
     public var sharedFolders: [SharedFolder]?
+    public var windowsInstallationPending: Bool?
+    public var audioEnabled: Bool?
 
     public init(name: String, system: GuestSystem, cpuCount: Int = 4, memoryGB: Int = 4, diskGB: Int = 64) {
         self.id = UUID()
@@ -39,6 +45,7 @@ public struct VirtualMachineRecord: Codable, Identifiable, Equatable, Sendable {
         self.networkEnabled = true
         self.bootFromInstaller = system == .linux
         self.installationPending = system == .macOS
+        self.guestBrand = GuestBrand.infer(system: system, sourceImagePath: nil, osVersion: nil, name: name).rawValue
     }
 
     public static func randomMACAddress() -> String {
@@ -54,8 +61,10 @@ public struct VirtualMachineRecord: Codable, Identifiable, Equatable, Sendable {
     }
 
     public static func load(from directory: URL) throws -> Self {
-        let record = try JSONDecoder().decode(Self.self, from: Data(contentsOf: directory.appendingPathComponent("Config.json")))
+        var record = try JSONDecoder().decode(Self.self, from: Data(contentsOf: directory.appendingPathComponent("Config.json")))
         guard record.schemaVersion == 1 else { throw VMError.message("This machine was created with a newer version of MacVM.") }
+        // Migrate in memory; the next normal settings save preserves identity on rename.
+        if record.guestBrand == nil { record.guestBrand = record.displayBrand.rawValue }
         return record
     }
 
