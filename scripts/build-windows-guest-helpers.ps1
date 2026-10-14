@@ -5,6 +5,9 @@ $root = Split-Path -Parent $PSScriptRoot
 $work = Join-Path $root '.build/windows-guest-sources'
 $output = Join-Path $root 'dist/windows-guest-helpers'
 $sources = Join-Path $work 'corresponding-sources'
+$dynamicTriplet = 'arm64-windows-release'
+$staticTriplet = 'arm64-windows-static-release'
+$hostTriplet = 'x64-windows-release'
 function Run([string] $File, [string[]] $Arguments) {
     & $File @Arguments | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "$File failed ($LASTEXITCODE)." }
@@ -31,15 +34,29 @@ foreach ($module in @(
     @('spice-protocol','https://gitlab.freedesktop.org/spice/spice-protocol.git','ce0c4211e6f16c66477934cc42e70fa0988ca7f0')
 )) {
     $path = Checkout $module[0] $module[1] $module[2]
-    Get-ChildItem -LiteralPath $path -Force | Where-Object Name -ne '.git' | Copy-Item -Destination (Join-Path $agent $module[0]) -Recurse -Force
+    $modulePath = Join-Path $agent $module[0]
+    New-Item -ItemType Directory -Path $modulePath -Force | Out-Null
+    Get-ChildItem -LiteralPath $path -Force | Where-Object Name -ne '.git' | Copy-Item -Destination $modulePath -Recurse -Force
 }
 $webdav = Checkout 'spice-webdavd' 'https://github.com/utmapp/spice-webdavd-arm64.git' $webdavCommit
 Run (Join-Path $vcpkg 'bootstrap-vcpkg.bat') @('-disableMetrics')
 $env:VCPKG_DISABLE_METRICS = '1'
-$env:VCPKG_BINARY_SOURCES = 'clear'
-Run (Join-Path $vcpkg 'vcpkg.exe') @('install','libpng:arm64-windows-static','glib:arm64-windows')
+$env:VCPKG_BINARY_SOURCES = if ($env:MACVM_BINARY_CACHE) { "clear;files,$env:MACVM_BINARY_CACHE,readwrite" } else { 'clear' }
+$triplets = Join-Path $sources 'triplets'
+New-Item -ItemType Directory -Path $triplets -Force | Out-Null
+foreach ($triplet in @($dynamicTriplet,$staticTriplet,$hostTriplet)) {
+    $arch = if ($triplet.StartsWith('arm64')) { 'arm64' } else { 'x64' }
+    $linkage = if ($triplet.Contains('static')) { 'static' } else { 'dynamic' }
+    Set-Content (Join-Path $triplets "$triplet.cmake") -Encoding utf8 -Value @"
+set(VCPKG_TARGET_ARCHITECTURE $arch)
+set(VCPKG_CRT_LINKAGE $linkage)
+set(VCPKG_LIBRARY_LINKAGE $linkage)
+set(VCPKG_BUILD_TYPE release)
+"@
+}
+Run (Join-Path $vcpkg 'vcpkg.exe') @('install',"libpng:$staticTriplet","glib:$dynamicTriplet","--host-triplet=$hostTriplet","--overlay-triplets=$triplets")
 $agentBuild = Join-Path $work 'agent-build'
-Run cmake @('-S',$agent,'-B',$agentBuild,'-A','ARM64',"-DCMAKE_TOOLCHAIN_FILE=$vcpkg/scripts/buildsystems/vcpkg.cmake",'-DVCPKG_TARGET_TRIPLET=arm64-windows-static','-DCMAKE_POLICY_VERSION_MINIMUM=3.5')
+Run cmake @('-S',$agent,'-B',$agentBuild,'-A','ARM64',"-DCMAKE_TOOLCHAIN_FILE=$vcpkg/scripts/buildsystems/vcpkg.cmake","-DVCPKG_TARGET_TRIPLET=$staticTriplet","-DVCPKG_HOST_TRIPLET=$hostTriplet","-DVCPKG_OVERLAY_TRIPLETS=$triplets",'-DCMAKE_POLICY_VERSION_MINIMUM=3.5')
 Run cmake @('--build',$agentBuild,'--config','Release','--target','vdagent','vdservice')
 Copy-Item (Join-Path $agentBuild 'Release/vdagent.exe'),(Join-Path $agentBuild 'Release/vdservice.exe') $output
 
@@ -61,15 +78,15 @@ target_compile_definitions(spice-webdavd PRIVATE _CRT_SECURE_NO_WARNINGS)
 Set-Content -LiteralPath (Join-Path $webdav 'CMakeLists.txt') -Value $cmake -Encoding utf8
 Set-Content -LiteralPath (Join-Path $sources 'webdav-CMakeLists.txt') -Value $cmake -Encoding utf8
 $webdavBuild = Join-Path $work 'webdav-build'
-Run cmake @('-S',$webdav,'-B',$webdavBuild,'-A','ARM64',"-DCMAKE_TOOLCHAIN_FILE=$vcpkg/scripts/buildsystems/vcpkg.cmake",'-DVCPKG_TARGET_TRIPLET=arm64-windows')
+Run cmake @('-S',$webdav,'-B',$webdavBuild,'-A','ARM64',"-DCMAKE_TOOLCHAIN_FILE=$vcpkg/scripts/buildsystems/vcpkg.cmake","-DVCPKG_TARGET_TRIPLET=$dynamicTriplet","-DVCPKG_HOST_TRIPLET=$hostTriplet","-DVCPKG_OVERLAY_TRIPLETS=$triplets")
 Run cmake @('--build',$webdavBuild,'--config','Release')
 $webdavOutput = Join-Path $output 'WebDAV'
 New-Item -ItemType Directory -Path $webdavOutput -Force | Out-Null
 Copy-Item (Join-Path $webdavBuild 'Release/spice-webdavd.exe') $webdavOutput
-Copy-Item (Join-Path $vcpkg 'installed/arm64-windows/bin/*.dll') $webdavOutput
+Copy-Item (Join-Path $vcpkg "installed/$dynamicTriplet/bin/*.dll") $webdavOutput
 $licenses = Join-Path $output 'Licenses'
 New-Item -ItemType Directory -Path $licenses -Force | Out-Null
-foreach ($triplet in @('arm64-windows','arm64-windows-static')) {
+foreach ($triplet in @($dynamicTriplet,$staticTriplet)) {
     Get-ChildItem (Join-Path $vcpkg "installed/$triplet/share") -Filter copyright -Recurse | ForEach-Object {
         Copy-Item $_.FullName (Join-Path $licenses ($triplet + '-' + $_.Directory.Name + '.txt'))
     }
@@ -87,7 +104,9 @@ These sources correspond to the MacVM-built ARM64 VDAgent, VDService and
 SPICE WebDAV helper plus its dynamically linked GLib dependencies. Upstream
 source revisions, binary hashes and dependency receipts are in Provenance.json.
 Extract each source tar. Run the supplied build script on a Windows ARM64
-Visual Studio C++ host (or use the MacVM Windows guest helpers GitHub workflow).
+Visual Studio C++ host with ARM64 build tools (or use the MacVM Windows guest
+helpers GitHub workflow). Native x64 build tools cross-compile ARM64 output;
+PE machine types are verified before any helper is packaged.
 The supplied vcpkg source tree contains exact ports and patches; its source
 downloads are in dependency-archives. VDAgent's two submodule sources are
 separate tar files. webdav-CMakeLists.txt is the only added upstream build file.
@@ -108,6 +127,7 @@ Get-ChildItem $output -Recurse -File | Where-Object { $_.Extension -in @('.exe',
 $provenance = @{
     schemaVersion=1; architecture='ARM64'; vdagent=$agentCommit; webdav=$webdavCommit; vcpkg=$vcpkgCommit
     spiceCommon='05c0c26839e88e6d0cc5452f49c40e38543c8f97'; spiceProtocol='ce0c4211e6f16c66477934cc42e70fa0988ca7f0'
+    targetTriplet=$dynamicTriplet; staticTriplet=$staticTriplet; hostTriplet=$hostTriplet
     binaries=$binaries; dependencies=(Get-Content (Join-Path $vcpkg 'installed/vcpkg/status') -Raw)
 }
 $provenance | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $output 'Provenance.json') -Encoding utf8
