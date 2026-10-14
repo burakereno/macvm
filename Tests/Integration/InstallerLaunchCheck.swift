@@ -34,10 +34,14 @@ import Darwin
     }
 
     static func checkLaunches() throws {
-        guard CommandLine.arguments.count == 3 else { throw failure("Pass a notarized MacVM.dmg and a Developer ID signing identity.") }
+        guard CommandLine.arguments.count == 4 else { throw failure("Pass a notarized MacVM.dmg, a Developer ID signing identity and its expected version.") }
         let fm = FileManager.default
         let dmg = URL(fileURLWithPath: CommandLine.arguments[1]).standardizedFileURL
         let identity = CommandLine.arguments[2]
+        let expectedVersion = CommandLine.arguments[3]
+        guard expectedVersion.range(of: #"^[0-9]+\.[0-9]+\.[0-9]+$"#, options: .regularExpression) != nil else {
+            throw failure("Expected version must be a numeric semantic version.")
+        }
         let usageURL = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("MacVM/ApplicationUsage.lock")
         let fd = open(usageURL.path, O_CREAT | O_RDWR | O_NOFOLLOW, 0o600)
         guard fd >= 0, flock(fd, LOCK_EX | LOCK_NB) == 0 else { throw failure("Shut down all MacVM machines first.") }
@@ -89,7 +93,7 @@ import Darwin
             defer { try? fm.removeItem(at: work) }
             try fm.copyItem(at: dmg, to: work.appendingPathComponent("MacVM.dmg"))
             let process = Process(); process.executableURL = URL(fileURLWithPath: "/bin/bash")
-            process.arguments = [script.path, work.path, target.path, "0.2.0", sha,
+            process.arguments = [script.path, work.path, target.path, expectedVersion, sha,
                                  "com.burakerenoglu.macvm", "66K3EFBVB6", "999999"]
             process.standardInput = FileHandle(fileDescriptor: dup(fd), closeOnDealloc: true)
             let log = parent.appendingPathComponent("helper.log")
@@ -116,9 +120,9 @@ import Darwin
                 print("PASS: unconfirmed launch stopped, original executable restored and relaunched.")
             } else {
                 let installed = try PropertyListSerialization.propertyList(from: Data(contentsOf: target.appendingPathComponent("Contents/Info.plist")), format: nil) as! [String: Any]
-                guard process.terminationStatus == 0, installed["CFBundleShortVersionString"] as? String == "0.2.0", apps.count == 1,
+                guard process.terminationStatus == 0, installed["CFBundleShortVersionString"] as? String == expectedVersion, apps.count == 1,
                       !fm.fileExists(atPath: parent.appendingPathComponent("old-launched").path) else { throw failure("Signed installation/relaunch failed.") }
-                print("PASS: signed DMG assessed, app replaced, actual MacVM 0.2.0 initialized and confirmed.")
+                print("PASS: signed DMG assessed, app replaced, actual MacVM \(expectedVersion) initialized and confirmed.")
             }
             guard !fm.fileExists(atPath: work.path), !(try fm.contentsOfDirectory(atPath: parent.path)).contains(where: { $0.hasPrefix(".MacVM-update.") }) else { throw failure("Update left workspace or backup behind.") }
             print("PASS: workspace, mount and staging cleanup.")

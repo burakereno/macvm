@@ -30,7 +30,7 @@ swift test
 # Optional: fetch Apple metadata and validate a real macOS VM configuration.
 ./scripts/verify-macos-configuration.sh
 # Optional live updater install/rollback check; shut down all VMs first.
-./scripts/verify-update-launch.sh /path/to/notarized-MacVM.dmg your-signing-identity
+./scripts/verify-update-launch.sh /path/to/notarized-MacVM.dmg your-signing-identity 0.3.0
 ```
 
 The Codex Run button uses the same script. The app bundle is `dist/MacVM.app`.
