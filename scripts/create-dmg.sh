@@ -153,8 +153,19 @@ xcrun swift "$BACKGROUND_SCRIPT" \
   "$GRID_Y_UPPER"
 
 
+# Firmware and engine payloads make hdiutil's inferred HFS+ size too small on
+# some hosts. Use logical file sizes plus filesystem/metadata headroom.
+IMAGE_SIZE_MB="$(python3 - "$STAGING_DIR" <<'PY'
+from pathlib import Path
+import sys
+root = Path(sys.argv[1])
+size = sum(path.stat().st_size for path in root.rglob('*') if path.is_file() and not path.is_symlink())
+print((size * 6 // 5 + 1024 * 1024 - 1) // (1024 * 1024) + 64)
+PY
+)"
 hdiutil create \
   -volname "$VOLUME_NAME" \
+  -size "${IMAGE_SIZE_MB}m" \
   -srcfolder "$STAGING_DIR" \
   -format UDRW \
   -fs HFS+ \
