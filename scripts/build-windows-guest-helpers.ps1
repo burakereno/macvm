@@ -61,7 +61,18 @@ set(VCPKG_BUILD_TYPE release)
 }
 Run (Join-Path $vcpkg 'vcpkg.exe') @('install',"libpng:$staticTriplet","glib:$dynamicTriplet","--host-triplet=$hostTriplet","--overlay-triplets=$triplets")
 $agentBuild = Join-Path $work 'agent-build'
-Run cmake @('-S',$agent,'-B',$agentBuild,'-A','ARM64',"-DCMAKE_TOOLCHAIN_FILE=$vcpkg/scripts/buildsystems/vcpkg.cmake","-DVCPKG_TARGET_TRIPLET=$staticTriplet","-DVCPKG_HOST_TRIPLET=$hostTriplet","-DVCPKG_OVERLAY_TRIPLETS=$triplets",'-DCMAKE_POLICY_VERSION_MINIMUM=3.5')
+# Current libpng exports PNG::PNG instead of the historical png_static target.
+# Keep the small build compatibility patch alongside the original sources.
+$agentCMake = Join-Path $agent 'CMakeLists.txt'
+$agentRecipe = Get-Content -LiteralPath $agentCMake -Raw
+if (!$agentRecipe.Contains('find_package(libpng CONFIG REQUIRED)') -or !$agentRecipe.Contains('set(PNG_LIBRARY png_static)')) { throw 'Unexpected VDAgent build recipe.' }
+$agentRecipe = $agentRecipe.Replace('find_package(libpng CONFIG REQUIRED)','find_package(PNG REQUIRED)').Replace('set(PNG_LIBRARY png_static)','set(PNG_LIBRARY PNG::PNG)')
+[IO.File]::WriteAllText($agentCMake,$agentRecipe,[Text.UTF8Encoding]::new($false))
+& git -C $agent diff -- CMakeLists.txt | Set-Content (Join-Path $sources 'vdagent-CMake.patch') -Encoding utf8
+if ($LASTEXITCODE -ne 0) { throw 'Could not record VDAgent build patch.' }
+# This historical SPICE protocol revision recognizes MSVC ARM32 but not ARM64.
+# Windows ARM64 is little endian; declare it for both C and C++ compilation.
+Run cmake @('-S',$agent,'-B',$agentBuild,'-A','ARM64',"-DCMAKE_TOOLCHAIN_FILE=$vcpkg/scripts/buildsystems/vcpkg.cmake","-DVCPKG_TARGET_TRIPLET=$staticTriplet","-DVCPKG_HOST_TRIPLET=$hostTriplet","-DVCPKG_OVERLAY_TRIPLETS=$triplets",'-DCMAKE_POLICY_VERSION_MINIMUM=3.5','-DCMAKE_C_FLAGS=/DSPICE_ENDIAN=SPICE_ENDIAN_LITTLE','-DCMAKE_CXX_FLAGS=/DSPICE_ENDIAN=SPICE_ENDIAN_LITTLE')
 Run cmake @('--build',$agentBuild,'--config','Release','--target','vdagent','vdservice')
 Copy-Item (Join-Path $agentBuild 'Release/vdagent.exe'),(Join-Path $agentBuild 'Release/vdservice.exe') $output
 
@@ -115,7 +126,9 @@ helpers GitHub workflow). Native x64 build tools cross-compile ARM64 output;
 PE machine types are verified before any helper is packaged.
 The supplied vcpkg source tree contains exact ports and patches; its source
 downloads are in dependency-archives. VDAgent's two submodule sources are
-separate tar files. webdav-CMakeLists.txt is the only added upstream build file.
+separate tar files. Apply vdagent-CMake.patch for the current libpng CMake target.
+The build flags declare the little-endian Windows ARM64 target to the historical
+SPICE headers. webdav-CMakeLists.txt is the added WebDAV build file.
 GLib DLLs remain dynamically linked and may be replaced with rebuilt versions.
 Source archives contain no signing secrets or user credentials.
 '@
@@ -134,6 +147,7 @@ $provenance = @{
     schemaVersion=1; architecture='ARM64'; vdagent=$agentCommit; webdav=$webdavCommit; vcpkg=$vcpkgCommit
     spiceCommon='05c0c26839e88e6d0cc5452f49c40e38543c8f97'; spiceProtocol='ce0c4211e6f16c66477934cc42e70fa0988ca7f0'
     targetTriplet=$dynamicTriplet; staticTriplet=$staticTriplet; hostTriplet=$hostTriplet
+    spiceEndian='SPICE_ENDIAN_LITTLE'
     binaries=$binaries; dependencies=(Get-Content (Join-Path $vcpkg 'installed/vcpkg/status') -Raw)
 }
 $provenance | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $output 'Provenance.json') -Encoding utf8
