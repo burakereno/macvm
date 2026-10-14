@@ -70,9 +70,18 @@ $agentRecipe = $agentRecipe.Replace('find_package(libpng CONFIG REQUIRED)','find
 [IO.File]::WriteAllText($agentCMake,$agentRecipe,[Text.UTF8Encoding]::new($false))
 & git -C $agent diff -- CMakeLists.txt | Set-Content (Join-Path $sources 'vdagent-CMake.patch') -Encoding utf8
 if ($LASTEXITCODE -ne 0) { throw 'Could not record VDAgent build patch.' }
-# This historical SPICE protocol revision recognizes MSVC ARM32 but not ARM64.
-# Windows ARM64 is little endian; declare it for both C and C++ compilation.
-Run cmake @('-S',$agent,'-B',$agentBuild,'-A','ARM64',"-DCMAKE_TOOLCHAIN_FILE=$vcpkg/scripts/buildsystems/vcpkg.cmake","-DVCPKG_TARGET_TRIPLET=$staticTriplet","-DVCPKG_HOST_TRIPLET=$hostTriplet","-DVCPKG_OVERLAY_TRIPLETS=$triplets",'-DCMAKE_POLICY_VERSION_MINIMUM=3.5','-DCMAKE_C_FLAGS=/DSPICE_ENDIAN=SPICE_ENDIAN_LITTLE','-DCMAKE_CXX_FLAGS=/DSPICE_ENDIAN=SPICE_ENDIAN_LITTLE')
+# The historical header undefines SPICE_ENDIAN before architecture detection;
+# add the actual MSVC ARM64 architecture macro rather than a discarded flag.
+$protocol = Join-Path $work 'spice-protocol'
+$macroHeader = Join-Path $protocol 'spice/macros.h'
+$macroText = Get-Content -LiteralPath $macroHeader -Raw
+if (!$macroText.Contains('defined(_M_ARM)')) { throw 'Unexpected SPICE endianness detection.' }
+$macroText = $macroText.Replace('defined(_M_ARM)','defined(_M_ARM) || defined(_M_ARM64)')
+[IO.File]::WriteAllText($macroHeader,$macroText,[Text.UTF8Encoding]::new($false))
+& git -C $protocol diff -- spice/macros.h | Set-Content (Join-Path $sources 'spice-protocol-arm64.patch') -Encoding utf8
+if ($LASTEXITCODE -ne 0) { throw 'Could not record SPICE ARM64 patch.' }
+Copy-Item $macroHeader (Join-Path $agent 'spice-protocol/spice/macros.h') -Force
+Run cmake @('-S',$agent,'-B',$agentBuild,'-A','ARM64',"-DCMAKE_TOOLCHAIN_FILE=$vcpkg/scripts/buildsystems/vcpkg.cmake","-DVCPKG_TARGET_TRIPLET=$staticTriplet","-DVCPKG_HOST_TRIPLET=$hostTriplet","-DVCPKG_OVERLAY_TRIPLETS=$triplets",'-DCMAKE_POLICY_VERSION_MINIMUM=3.5')
 Run cmake @('--build',$agentBuild,'--config','Release','--target','vdagent','vdservice')
 Copy-Item (Join-Path $agentBuild 'Release/vdagent.exe'),(Join-Path $agentBuild 'Release/vdservice.exe') $output
 
@@ -127,8 +136,8 @@ PE machine types are verified before any helper is packaged.
 The supplied vcpkg source tree contains exact ports and patches; its source
 downloads are in dependency-archives. VDAgent's two submodule sources are
 separate tar files. Apply vdagent-CMake.patch for the current libpng CMake target.
-The build flags declare the little-endian Windows ARM64 target to the historical
-SPICE headers. webdav-CMakeLists.txt is the added WebDAV build file.
+Apply spice-protocol-arm64.patch to recognize the MSVC ARM64 architecture in
+the historical SPICE headers. webdav-CMakeLists.txt is the added WebDAV build file.
 GLib DLLs remain dynamically linked and may be replaced with rebuilt versions.
 Source archives contain no signing secrets or user credentials.
 '@
