@@ -1,8 +1,11 @@
-MacVM 0.3.1 centers the library search field in the window toolbar.
+MacVM 0.3.2 makes available updates visible in the library footer.
 
-- Uses the native macOS search control, with immediate filtering and a clear button.
-- Command–F focuses search. Search remains hidden in small or empty libraries;
-  hiding it clears the previous filter so all remaining machines are visible.
+- A small orange Update Available button appears at the bottom right after a
+  newer release passes the existing version, installer and manifest checks.
+- Empty libraries show it instead of Ready when you are. Other libraries retain
+  their machine counter beside the button.
+- The button opens the existing update window. Installation remains a separate
+  user action, and running virtual machines still block installation.
 
-Windows 11 ARM, automatic Ubuntu setup and macOS Guest Tools from 0.3.0 remain
-included. Requires macOS 26 or later on Apple silicon.
+Automatic network failures remain silent. No system notification permission is
+needed. Requires macOS 26 or later on Apple silicon.

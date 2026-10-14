@@ -297,6 +297,10 @@ NOTARY_PROFILE=your-profile CODESIGN_IDENTITY=your-identity ./scripts/notarize-r
 `scripts/create-dmg.sh` also creates a local development DMG. A locally signed
 build is **not notarized** until the notarization script and Gatekeeper checks
 have succeeded. Choose **MacVM → Check for Updates…** to download and install a verified release.
+When a newer verified release is found, a small **Update Available** button appears
+at the bottom right of the library. It replaces the empty-library hint or sits
+beside the machine counter. Clicking it opens the update window; installation
+starts only when you choose **Install Update…**.
 Automatic checks are quiet on network errors. The updater uses GitHub’s latest
 release redirect, validates the DMG and companion manifest, checks SHA-256,
 requires the exact Developer ID publisher and Gatekeeper assessment, stages

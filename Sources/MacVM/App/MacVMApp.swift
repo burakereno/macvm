@@ -15,7 +15,7 @@ struct MacVMApp: App {
 
     var body: some Scene {
         Window("MacVM", id: "library") {
-            LibraryView(library: library)
+            LibraryView(library: library, updater: updater)
                 .tint(.orange)
                 .onOpenURL { library.importMachine(at: $0) }
                 .task {

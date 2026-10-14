@@ -1,11 +1,14 @@
 import SwiftUI
 import MacVMCore
+import MacVMUpdate
 
 struct LibraryView: View {
     @Bindable var library: LibraryStore
+    @Bindable var updater: UpdateChecker
     @State private var search = ""
     @State private var searchFocusRequest = 0
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
     private var filtered: [VMEntry] {
         library.entries.filter { search.isEmpty || $0.record.name.localizedCaseInsensitiveContains(search) || $0.record.system.title.localizedCaseInsensitiveContains(search) }
     }
@@ -118,7 +121,21 @@ struct LibraryView: View {
             Text("·")
             Text("\(ProcessInfo.processInfo.activeProcessorCount) cores · \(ProcessInfo.processInfo.physicalMemory / VMStorage.gib) GB memory")
             Spacer()
-            Text(library.entries.isEmpty ? "Ready when you are" : "\(library.entries.count) \(library.entries.count == 1 ? "machine" : "machines") · \(library.entries.filter { library.phase(for: $0).isActive }.count) active")
+            if !library.entries.isEmpty {
+                Text("\(library.entries.count) \(library.entries.count == 1 ? "machine" : "machines") · \(library.entries.filter { library.phase(for: $0).isActive }.count) active")
+            } else if updater.release == nil {
+                Text("Ready when you are")
+            }
+            if let release = updater.release {
+                Button { openWindow(id: "updates") } label: {
+                    Label("Update Available", systemImage: "arrow.down.circle")
+                }
+                .buttonStyle(.glass).controlSize(.small)
+                .foregroundStyle(.orange)
+                .help("MacVM \(release.manifest.version) is available. View the update.")
+                .accessibilityHint("Opens the update window for MacVM \(release.manifest.version)")
+                .padding(.leading, library.entries.isEmpty ? 0 : 8)
+            }
         }
         .font(.system(size: 11)).foregroundStyle(.tertiary)
         .padding(.horizontal, 25).padding(.bottom, 17).padding(.top, 10)
