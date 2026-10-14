@@ -2,7 +2,8 @@
 
 Local Developer ID signed development build on an Apple silicon Mac
 (14 cores, 24 GB RAM, macOS 26). macOS account automation is deferred.
-This work has not been published as a new GitHub release.
+These acceptance results describe the original test run. The feature subsequently
+shipped in [MacVM 0.3.0](https://github.com/burakereno/macvm/releases/tag/v0.3.0).
 
 ## Observed guest coverage
 

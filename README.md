@@ -112,7 +112,7 @@ The row's play/pause button starts, pauses, or resumes a machine. Double-click a
 row to open its window. Its action menu includes shutdown, force stop, settings,
 duplicate, move, show in Finder, and move to Trash. CPU, RAM, boot media, and
 network can be changed while stopped. Disk capacity is chosen at creation;
-resizing an existing guest volume is not included in 0.2.
+resizing an existing guest volume is not included in 0.3.
 
 **Shut Down** asks the guest OS to power off. A minimal Linux live environment
 may not run an ACPI power service. MacVM waits up to 30 seconds, then restores

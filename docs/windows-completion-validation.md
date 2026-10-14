@@ -1,70 +1,102 @@
-# Windows completion work — 2026-10-13
+# Windows 0.3 acceptance — 2026-10-14
 
-User requested all five remaining areas: portable engine, new Windows creation, Tools onboarding, sound/clipboard/folders, release validation.
+Production code: `5142298f764c7e111b13ca723d395747a06bb0bb`.
+Signed validation build: [Actions 38560466720](https://github.com/burakereno/macvm/actions/runs/38560466720).
+The final CI and local artifact trust/launch/rollback checks passed.
+[MacVM 0.3.0](https://github.com/burakereno/macvm/releases/tag/v0.3.0) is public.
+The release tag points to the exact verified production commit above; subsequent
+acceptance documentation changes do not alter the packaged app.
 
-## Implementation so far
+## Fresh guest
 
-- Portable bundler stages QEMU, qemu-img, swtpm and swtpm_setup plus 31 libraries, rewrites all external dylibs to loader-relative paths, signs each, and records dependencies/source metadata. Hypervisor entitlement remains; library-validation bypass was removed.
-- Main creation wizard supports Windows 11 ARM64 local ISO or Microsoft CDN ISO link downloaded to Downloads; optional SHA-256, PE ARM64 media validation, APFS ISO clone with capacity-checked copy fallback, standalone QCOW2, independently manufactured TPM with Microsoft Secure Boot firmware.
-- Windows Tools CD preparation includes matching GPU, network and serial drivers plus source-built ARM64 VDAgent and SPICE WebDAV. Visual C++ is downloaded from Microsoft by the guest only when missing, with signature verification and visible licence installer. It is not redistributed in the ISO. The new source-built payload is still awaiting CI and live acceptance.
-- Clipboard integration is opt-in, text only, active-window and active host session only; resets baseline around host sleep/lock. Folder WebDAV uses a private virtio-serial channel, selected folders only, read-only default. All file operations use directory FDs/openat with no-follow checks; no host TCP listener.
-- Windows Settings now expose sound output, sharing and installer ejection; runtime Tools status and unavailable reminder added.
+A new Windows 11 ARM Installation Test was created through the production wizard
+at `8C45ADF3-1200-4AD0-B9CF-028BB7011607.macvm`, with 4 CPUs, 8 GB RAM,
+a 128 GB QCOW2 disk and its own TPM/Secure Boot variables. The original Windows
+VM was preserved and remains stopped. The host is Apple silicon, 14 cores,
+24 GB RAM, macOS 27.0.1.
 
-## Tests so far
+Microsoft's English ARM64 26300.9457 ISO was downloaded to Downloads; its SHA-256
+was `8992f2d2cfd2fa647e579e9eb31fc21f34da8333c29b6170fde17d2ed6623e9c`.
+The Microsoft page's language/checksum-table discrepancy is retained as a
+limitation; no English table-row match is claimed. Installation uses the normal
+Windows 11 Pro work/school → Domain join local-account flow. The user accepted
+the licence and entered the password/recovery information. No hardware,
+network, UAC, activation or security checks were bypassed.
 
-- Portable binaries launched with only system PATH; TPM manufacture passed independently. Fresh VM cold boot found a missing QEMU keymaps resource; bundler was corrected and runtime preflight now requires en-us.
-- Four new sharing/media-link tests passed after correcting macOS descriptor-relative file operations. Covers fragmented/oversized clipboard frames, HTTP framing/smuggling bounds, read/write, read-only mutation refusal, traversal/symlink refusal and Microsoft URL allowlist.
-- Initial Developer ID development app builds and deep signature verification passed. Full unit suites passed: 57 MacVMCore and 22 Windows tests. Real guest integration and release notarization remain outstanding.
-- Official Windows ISO downloaded to Downloads and confirmed SHA-256 8992f2d2cfd2fa647e579e9eb31fc21f34da8333c29b6170fde17d2ed6623e9c, the same official English ARM64 26300.9457 media used in the earlier installation. Microsoft's page still has the documented language/checksum-table discrepancy; no English table-row match is claimed.
-- Fresh wizard created Windows 11 ARM Installation Test at ~/Library/Application Support/MacVM/Virtual Machines/8C45ADF3-1200-4AD0-B9CF-028BB7011607.macvm. First boot failed safely on missing keymaps. After including keymaps, the new VM booted Windows Setup. Actual QEMU/TPM vmmap checks showed no /opt/homebrew or /usr/local library mappings. Existing Windows VM remains untouched and stopped.
+## Observed acceptance
 
-## Outstanding acceptance
+| Area | Actual result |
+| --- | --- |
+| Installation | Fresh Setup/OOBE completed and the desktop opened; installation ISO was subsequently ejected and disk-only boot passed. |
+| Portable engine | QEMU/TPM runtime mappings contained no Homebrew libraries. All 35 bundled Mach-O files passed exact hashes, publisher signatures and loader-relative dependency checks; system-only PATH disk/TPM tests passed. |
+| Tools | Source-built ARM64 clipboard/folder helpers and signed network/serial/GPU drivers installed. The Microsoft ARM64 VC runtime signature and licence were checked. Matching helper receipts, 18 binaries and source archives were verified. |
+| Display | Windows 200% scale; 2560×1664 window resolution and 3456×2064 full-screen resolution. Button and Control–Command–F entry/exit passed; resolution returned after exit. No old letterboxing. |
+| Audio | Built-in Windows High Definition Audio driver selected; the user confirmed both stereo speaker test sounds on the Mac. |
+| Clipboard | Distinct test text copied host → Windows and Windows → host, unchanged. An exclusively created TextEdit document was used; no existing user clipboard contents were transmitted. |
+| Folder scope | Explorer listed exactly the two selected folders at `\\localhost@9843\DavWWWRoot`. Read-only file content opened correctly. |
+| Writable folder | Explorer created a directory; a Notepad edit saved into the selected host file with the exact expected appended text. |
+| Read-only folder | Directory creation failed. After the metadata correction, a fresh file's Properties showed Read-only and Notepad refused overwrite with “This file is set to read-only.” Actual host bytes remained unchanged. |
+| Lifecycle | Toolbar pause and Control–Command–P resume passed. Normal toolbar shutdown passed repeatedly, including after the final folder test; Runner/WindowsEngine processes exited and VM disks remained intact. |
+| Media cleanup | Source ISO and copied Installer.iso were removed through Installation Files, preserving the Windows disk. The user approved permanent deletion of the remaining disposable ISO at action time. |
 
-- Boot the new VM from the updated package and complete fresh Windows Setup/OOBE, Tools installation, disk-only boot, sound, clipboard both directions, read-only/read-write folders and resize/fullscreen/lifecycle.
-- Use CUA for guest input. Password entry is a required user handoff; licences/new administrator access need confirmation at action time under the computer-use policy.
-- Complete distribution pipeline bootstrap for fresh CI (Homebrew build deps + official Secure Boot firmware); dependency/source/licence audit; full tests, updater audits, signed/notarized app+DMG and update manifest.
-- Remove only owned installers/Downloads extraction, disposable test artifacts and assertions after acceptance.
+## Findings incorporated
 
-## Subsequent acceptance work
+The setup/recovery display is retained independently of the installer ISO.
+VNC is explicitly bound to the named VirtIO GPU or recovery display, avoiding
+device-order dependence. Pause uses Control–Command–P so Windows' Win–P remains
+available. Physical key/modifier handling was corrected and regression-tested.
 
-- The Microsoft licence for the new test VM was accepted only after the user confirmed at the actual licence screen. Windows 11 Pro is installing on its new 128 GB disk. No hardware checks, UAC or activation protections were bypassed.
-- Added a reproducible firmware bootstrap using pinned upstream commits and hashes. It reproduces the exact previously validated Secure Boot code/variable images without downloading the entire UTM app. CI now requires the Windows engine and Tools payload.
-- Collected exact archives, installed Homebrew recipes/patches and notices for 28 engine components. Metadata records the actually linked installed version, rather than current formula metadata. Public build receipts exclude personal cache paths. Source archive is a release asset. Guest Tools source/notice audit is still outstanding.
-- Added a portable engine release verifier: 35 files passed hashes, Team 66K3EFBVB6 signatures, hardened runtime and loader-relative linkage; qemu-img disk creation and independently manufactured TPM passed with system-only PATH.
-- Windows download redirects are rejected before contacting hosts outside the Microsoft allowlist. Added response-origin tests; focused download and sharing tests passed.
-- Physical-key mapping fixes Turkish host characters that previously lost i/punctuation. The running app includes this fix. Turkish Q was selected in Windows OOBE and the test account name entered correctly; punctuation and desktop text entry still need live checks.
-- Clipboard remembers new host copies locally while the VM is inactive, sends only after it is foreground, and never uploads pre-launch clipboard contents. Message chunks cannot interleave. WebDAV reads are bounded to the advertised file length. These last changes still require live guest checks.
+Tools installation requires Windows' actual **Restart** command after its final
+step. An earlier shutdown/start retained the obsolete framebuffer state through
+Fast Startup. The final restart produced the correct VirtIO desktop; instructions
+in the installer, runtime guide, Settings and README now explain this sequence.
 
-## Fresh installation and subsequent checks
+Read-only WebDAV mutations were already denied by the host, but Notepad initially
+reported a cached edit as saved. PROPFIND now advertises Windows read-only
+attributes as well. A new uncached file produced the expected visible overwrite
+error in the final live test. Unit tests assert both read-only and writable flags.
 
-- Windows 11 Pro installation completed on the new disk and reached OOBE. Normal toolbar shutdown at OOBE passed; the guest was restarted after rebuilding the app. The Tools CD's ARM64 network driver installed through Windows' supported Install Driver UI, and OOBE confirmed Network Connected.
-- User approved the Microsoft Windows licence at action time. Setup uses Windows Pro's normal work/school → sign-in options → Domain join instead local-account flow. No fake account, hardware bypass or network bypass was used. The user completed password/confirmation/recovery entry. Privacy preferences completed; optional OOBE updates were deferred through Windows' supported Update later action. The new macvmtest desktop opened successfully on 2026-10-14.
-- Full updated tests passed: 58 MacVMCore and 24 Windows tests. WebDAV write locks now enforce ownership, expire on a monotonic clock, renew/unlock with valid tokens, normalize encoded paths, protect locked descendants during delete/move, reject unsafe/unsupported lock XML, and report lock discovery. Negative writes left actual files intact.
-- Added explicit host lock/unlock notifications alongside independent session and sleep states. Display wake cannot clear the lock state. Source compiles; a live host-lock clipboard test is still required.
-- Old ready-made guest-helper binaries lacked complete build provenance. A Windows ARM64 GitHub job now builds pinned upstream VDAgent/VDService and WebDAV against pinned vcpkg sources, producing matching source archives, build recipes, notices and binary hashes. First source build is running at https://github.com/burakereno/macvm/actions/runs/38447211201 (commit 48ea1b1 on codex/windows-completion). It has not yet passed, and the new outputs are not yet installed in the VM.
-- Packaging now requires verified ARM64 guest-helper outputs for required-Windows builds. The Windows Tools installer supports the source-built WebDAV service directly. These latest packaging changes are local, syntactically checked, and await the source build, app rebuild and fresh Tools acceptance. No new public release has been published.
-- The first helper build reached its 60-minute job timeout while building dependencies, without reaching helper compilation. The replacement job cross-compiles ARM64 on a native x64 Windows runner, builds Release dependencies only and caches source downloads/binaries outside the repository clone. A SPICE MSVC ARM64 detection patch, current libpng CMake target patch and current GLib Windows include directory were required; patches/build recipes ship with original sources. Source build passed at https://github.com/burakereno/macvm/actions/runs/38530424113, commit da8500e. Artifact download and local payload verification are pending.
-- Fresh Windows recognized Speakers / High Definition Audio Device as the default output without additional drivers. The Windows stereo speaker test ran; the user confirmed hearing both test sounds on the Mac. Audio output acceptance passed.
-- Tools preparation now stages helper cache copies before replacement and commits a receipt last. Required-Windows builds verify that the Tools ISO hash and helper build receipt match; interrupted cache preparation fails preflight.
-- The fresh Windows disk consumed about 27 GB after first-boot setup/initial update download. Windows creation now requires 40 GiB (about 43 GB), plus download/non-APFS ISO-copy space, to retain installation/update headroom. QEMU storage-error pauses now have an explicit paused error message rather than appearing as ordinary user pauses; the storage-error branch is not fault-injected against a guest.
-- Completed Ubuntu 24.04.3/26.04.1 installer ISO copies were removed through Installation Files; VM disks remained intact. The Trash contained only those two ISO files and was emptied, recovering about 7 GB. Windows source/VM ISO files remain until disk-only boot acceptance. Current free space is about 9 GiB.
-- Physical letters and basic punctuation passed in the fresh guest; synthetic modifier chords exposed lost modifier state. Input now synchronizes current event flags while preserving left/right Alt (AltGr), Ctrl, Shift and Command. The modifier regression test passed through the native XCTest runner. Latest checks: 58 MacVMCore tests and 25 Windows tests passed. Live modifier checks await the updated app.
-- Source-built Tools verification passed for 18 ARM64 executables/libraries, exact hashes, notices and matching archives. Prepared CD/cache receipt validation passed; current local development app is Developer ID signed with a signed macOS Guest Tools package (not locally notarized). Portable engine verification again passed 35 signed system-only files, disk creation and private TPM manufacture.
-- Fresh CI exposed a Swift compiler inference limit in agent capability flags and a profile test assuming four host CPUs. Flags are now explicitly typed and the profile test uses one CPU. These corrections preserve production host hardware limits. Latest validation-only release workflow is running from commit 5b884c8; no release has been published.
-- Ejecting the ISO before Tools installation exposed an inactive VirtIO display. New Windows VMs now retain a setup/recovery display independently of their ISO; after Tools installation, Machine Settings enables Automatic display resolution. The recovery selection was applied through the real UI to the test VM. It booted with no installer attached and reached the actual Windows desktop with an 800×600 setup framebuffer; the new Tools CD was mounted from the runtime reminder. Unit suites passed again (58 core + 25 Windows). Driver installation and automatic-resolution acceptance remain pending.
+Clipboard sharing is opt-in, text-only and restricted to the active VM and host
+session. Selected-folder WebDAV uses a private virtio channel, no host TCP
+listener, descriptor-relative no-follow file operations and bounded uploads.
+Source/notice archives and pinned helper build recipes accompany distribution.
 
-- Fresh Tools integration installed the serial/network drivers, Microsoft ARM64 Visual C++ runtime, source-built clipboard agent and selected-folder service. The Microsoft runtime licence was accepted only after user approval at its visible licence screen. GPU installation staged the modern driver and requested a real Windows Restart; the user signed in after that restart. Final display/service installation and live integration checks remain in progress.
-- Validation run 38540322979 passed all 83 tests, source collection, portable engine verification, Guest Tools notarization/stapling/Gatekeeper and app notarization/stapling/Gatekeeper. DMG creation failed because the inferred image size was too small for the engine/firmware. Explicit logical-size plus metadata headroom produced a valid compressed test image; all 249 app files matched byte-for-byte. Run 38540322979 was validation-only; no public release was created.
+## Verification and limits
 
-## Acceptance on 2026-10-14
+- Local native suites: 58 MacVMCore and 25 Windows tests, zero failures.
+- Final CI: all 83 tests, source collection, portable engine, app/pkg/DMG strict
+  signatures, exact Team 66K3EFBVB6, hardened runtime, notarization, stapling,
+  Gatekeeper and update manifest passed.
+- Updater audit: zero issues, zero warnings. The production installer accepted the
+  notarized 0.3.0 DMG, replaced an isolated app target, launched the real app and
+  received its confirmation. A deliberately missing confirmation stopped that
+  launch, restored and relaunched the original executable. Workspace, mount and
+  staging cleanup passed; the user's installed app was not replaced by this test.
+- Local DMG, mounted app and macOS Guest Tools package passed signatures,
+  exact publisher identity, staple and Gatekeeper assessment. The DMG SHA-256
+  matched its update manifest: `ed68e1d5f7dd8b313f42648bde95b760167c9fbd2e400be1b42419fcc0473ab0`.
+- Storage-error pause handling and independent clipboard sleep/lock state are
+  covered in code/tests. A controlled live host-lock clipboard matrix and guest
+  storage-failure injection were not performed. They are not claimed as passed.
+- Windows GPU is display-only. Accelerated 3D, snapshots, disk resizing and file
+  drag and drop are not included. Other host hardware/extended stress were not exercised.
 
-- Validation-only run [38542438609](https://github.com/burakereno/macvm/actions/runs/38542438609) at commit 6771eb4 passed the full pipeline: 83 tests, pinned helper/source builds, portable engine checks, app/pkg/DMG signatures, notarization, stapling, Gatekeeper and update manifest. Downloaded artifacts remain in Downloads/MacVM-0.3.0-Validation. Local DMG and pkg trust checks passed. Later display-binding/instruction changes still require a fresh validation build; no public release is claimed.
-- Fresh source-built Tools installation completed, including the matching GPU 100.100.104.27100 and running vgpusrv. The final Basic Display fallback change needs a real Windows Restart even after a fresh installation. A normal shutdown/start before that restart retained the 800×600 RAMFB desktop and left VirtIO black. Windows' supported Restart command completed the transition; the VirtIO desktop then rendered at 2560×1664. Installer, runtime help, settings and README now explicitly require that final restart.
-- The embedded VNC display is explicitly bound to the selected named GPU or setup-display, removing reliance on device realization order. Pause uses Control–Command–P so Windows' Win–P is not intercepted by the host menu.
-- Windows Settings visibly confirmed 200% scale and 2560×1664 resolution in the window, then 3456×2064 in native full screen. Toolbar and Control–Command–F entry/exit completed. Full screen filled the display without the old letterboxing; window resolution returned after exit.
-- Clipboard acceptance passed both directions using a newly created test-only TextEdit document and Windows Notepad: host → guest text arrived unchanged; a distinct guest copy was pasted into the host document. No pre-existing user clipboard text was used. Windows' Turkish Q keyboard and physical-key handling are reflected in typed guest characters.
-- Windows Explorer opened the documented UNC path and listed exactly the two selected test folders, ReadOnly and Writable. Read-only file opening and actual write/denial tests are pending while the host is locked. Host-lock clipboard behavior still needs live acceptance.
-- Updated local test suites passed: 58 core and 25 Windows tests. The ISO cleanup preserved the Windows virtual disk; both source and copied installer ISO are absent. Only the disposable Installer.iso remained in Trash before permanent removal, and the user explicitly approved that action at time of deletion.
-- Validation-only run [38548668010](https://github.com/burakereno/macvm/actions/runs/38548668010) at production commit 7529939 passed the full signed/notarized app, pkg and DMG pipeline. The subsequent updater live-test harness supports an explicit expected release version instead of hardcoding 0.2.0.
-- Live Windows Explorer read the selected read-only sentinel. Creating a directory there failed, and actual host bytes remained unchanged after a Notepad overwrite attempt. Notepad initially reported its cached edit as saved even though the host rejected it; the WebDAV properties now advertise FILE_ATTRIBUTE_READONLY to match enforcement. The focused native suite passed with read-only/writable attribute assertions; live acceptance of that metadata fix is pending.
-- In Writable, Explorer created macvm-write-test. Editing host-writable.txt in Windows Notepad and saving produced the exact appended text on the Mac. Toolbar Pause and Control–Command–P Resume passed. Normal toolbar shutdown completed and all Runner/WindowsEngine processes exited, preserving the disk.
+- Normal Finder DMG opening showed the configured app/Applications placement and
+  complete install hint. The copied release app opened locally and About MacVM
+  confirmed version 0.3.0 (15).
+
+- All four public assets returned HTTP 200; the latest-release redirect selected
+  v0.3.0 and the public manifest matched the verified DMG. The actual 0.3.0 app
+  reported “MacVM is up to date” through its manual update UI. GitHub upload
+  digests matched every local asset before publication.
+
+## Cleanup
+
+The fresh and original Windows VM disks remain intact and stopped. Test shared
+folder references were removed through Machine Settings. Owned source build
+extractions, source caches, old validation downloads, clipboard document and
+share fixtures were removed. Existing user downloads and other VM disks were
+preserved. The final DMG, manifest and macOS Guest Tools installer remain in
+`~/Downloads/MacVM-0.3.0`. The large local source archive was removed after its
+public asset was verified; matching sources remain available in the release.
+The notarized release app is open from `dist/MacVM.app`; no VM is running.
