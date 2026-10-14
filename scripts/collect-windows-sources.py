@@ -23,16 +23,33 @@ if bool(args.guest_sources) != bool(args.guest_provenance):
 cache = Path.home() / 'Downloads/MacVM-Windows-Source-Cache'
 cache.mkdir(parents=True, exist_ok=True)
 
+# Alternate distribution of the identical upstream archive. Keep the original
+# source URL in the receipt and require its original SHA-256 on every route.
+source_mirrors = {
+    ('https://cairographics.org/releases/pixman-0.46.4.tar.gz',
+     'd09c44ebc3bd5bee7021c79f922fe8fb2fb57f7320f55e97ff9914d2346a591c'):
+        ['https://storage.googleapis.com/minimal-staging-archives/pixman-0.46.4.tar.gz'],
+}
+
 def fetch(url, checksum, destination):
     if destination.is_file() and hashlib.sha256(destination.read_bytes()).hexdigest() == checksum:
         return
     partial = destination.with_suffix(destination.suffix + '.partial')
-    subprocess.run(['curl', '--fail', '--location', '--retry', '2', '--connect-timeout', '15', '--max-time', '180', '--silent', '--show-error',
-                    '--proto', '=https', '--output', str(partial), url], check=True)
-    if hashlib.sha256(partial.read_bytes()).hexdigest() != checksum:
-        partial.unlink(missing_ok=True)
-        raise RuntimeError(f'Source checksum mismatch: {destination.name}')
-    partial.replace(destination)
+    candidates = [url, *source_mirrors.get((url, checksum), [])]
+    for index, candidate in enumerate(candidates):
+        try:
+            subprocess.run(['curl', '--fail', '--location', '--retry', '2', '--connect-timeout', '15', '--max-time', '180', '--silent', '--show-error',
+                            '--proto', '=https', '--output', str(partial), candidate], check=True)
+            if hashlib.sha256(partial.read_bytes()).hexdigest() != checksum:
+                raise RuntimeError(f'Source checksum mismatch: {destination.name}')
+            partial.replace(destination)
+            return
+        except subprocess.CalledProcessError:
+            if index == len(candidates) - 1:
+                raise
+            print(f'Upstream download unavailable; trying a checksum-pinned mirror for {destination.name}.')
+        finally:
+            partial.unlink(missing_ok=True)
 
 def collect(metadata_file):
     item = json.loads(metadata_file.read_text())
