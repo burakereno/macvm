@@ -124,7 +124,8 @@ try {
     New-ItemProperty -Path $fallbackKey -Name DisableBasicDisplayFallback -Value 1 -PropertyType DWord -Force | Out-Null
     if (Test-Path -LiteralPath $statePath) { Remove-Item -LiteralPath $statePath }
     Write-Host 'Matching ARM64 display driver and resolution service installed.'
-    Write-Host 'Restart Windows. Then resize MacVM and enter/leave full screen.'
+    Write-Host 'Use Windows Restart now, not Shut down. This final restart activates the display transition.'
+    Write-Host 'After restarting, resize MacVM and enter/leave full screen.'
     Write-Host 'Set Windows Settings > System > Display > Scale to 200% for Retina.'
     Write-Host 'The previous driver backup, if any, is in Program Files\MacVM Display Tools.'
     exit 0

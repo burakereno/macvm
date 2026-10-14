@@ -8,22 +8,23 @@ final class WindowsIntegrationTests: XCTestCase {
         config.networkEnabled = false
         let args = try config.arguments(runtime: URL(fileURLWithPath: "/tmp/private-win"), embeddedDisplay: true)
         XCTAssertEqual(args[args.firstIndex(of: "-display")! + 1], "none")
-        XCTAssertEqual(args[args.firstIndex(of: "-vnc")! + 1], "unix:/tmp/private-win/display.sock")
+        XCTAssertEqual(args[args.firstIndex(of: "-vnc")! + 1], "unix:/tmp/private-win/display.sock,display=gpu")
         XCTAssertFalse(args.contains("-netdev"))
         XCTAssertFalse(args.contains(where: { $0.contains("hostfwd") }))
-        XCTAssertLessThan(args.firstIndex(of: "virtio-gpu-pci,id=gpu,xres=2560,yres=1600")!, args.firstIndex(of: "ramfb")!)
+        XCTAssertLessThan(args.firstIndex(of: "virtio-gpu-pci,id=gpu,xres=2560,yres=1600")!, args.firstIndex(of: "ramfb,id=setup-display")!)
         config.installerPath = "/tmp/setup.iso"
         let installer = try config.arguments(runtime: URL(fileURLWithPath: "/tmp/private-win"), embeddedDisplay: true)
-        XCTAssertLessThan(installer.firstIndex(of: "ramfb")!, installer.firstIndex(of: "virtio-gpu-pci,id=gpu,xres=2560,yres=1600")!)
+        XCTAssertLessThan(installer.firstIndex(of: "ramfb,id=setup-display")!, installer.firstIndex(of: "virtio-gpu-pci,id=gpu,xres=2560,yres=1600")!)
         // Removing installation media before installing drivers must retain a
         // usable setup/recovery framebuffer for newly created machines.
         config.installerPath = nil; config.automaticDisplay = false
         let recovery = try config.arguments(runtime: URL(fileURLWithPath: "/tmp/private-win"), embeddedDisplay: true)
         XCTAssertFalse(recovery.contains(where: { $0.contains("install-cd") }))
-        XCTAssertLessThan(recovery.firstIndex(of: "ramfb")!, recovery.firstIndex(of: "virtio-gpu-pci,id=gpu,xres=2560,yres=1600")!)
+        XCTAssertEqual(recovery[recovery.firstIndex(of: "-vnc")! + 1], "unix:/tmp/private-win/display.sock,display=setup-display")
+        XCTAssertLessThan(recovery.firstIndex(of: "ramfb,id=setup-display")!, recovery.firstIndex(of: "virtio-gpu-pci,id=gpu,xres=2560,yres=1600")!)
         config.automaticDisplay = true
         let automatic = try config.arguments(runtime: URL(fileURLWithPath: "/tmp/private-win"), embeddedDisplay: true)
-        XCTAssertLessThan(automatic.firstIndex(of: "virtio-gpu-pci,id=gpu,xres=2560,yres=1600")!, automatic.firstIndex(of: "ramfb")!)
+        XCTAssertLessThan(automatic.firstIndex(of: "virtio-gpu-pci,id=gpu,xres=2560,yres=1600")!, automatic.firstIndex(of: "ramfb,id=setup-display")!)
     }
     func testFramebufferChecksBoundsAndRetainsPreviousPixels() throws {
         var frame = try DisplayFramebuffer(width: 2, height: 2)

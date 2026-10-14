@@ -79,6 +79,7 @@ final class WindowsRunnerDelegate: NSObject, NSApplicationDelegate, NSWindowDele
         submenu(record.name).addItem(withTitle: "Quit \(record.name)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         let machine = submenu("Virtual Machine")
         machine.addItem(withTitle: "Pause / Resume", action: #selector(togglePause), keyEquivalent: "p")
+        machine.items.last?.keyEquivalentModifierMask = [.control, .command]
         machine.addItem(withTitle: "Shut Down", action: #selector(shutdown), keyEquivalent: "")
         machine.addItem(withTitle: "Force Stop…", action: #selector(confirmForceStop), keyEquivalent: "")
         machine.addItem(withTitle: "Install Windows Tools…", action: #selector(installDisplayTools), keyEquivalent: "")
@@ -109,7 +110,7 @@ final class WindowsRunnerDelegate: NSObject, NSApplicationDelegate, NSWindowDele
             guard let self else { return }
             if let error { self.showError(error); return }
             let box = NSAlert(); box.messageText = "Install Windows Tools"
-            box.informativeText = "In Windows, open This PC → MacVM Tools. Right-click Install.cmd and choose Run as administrator. This installs display, network and integration drivers, text clipboard and shared-folder helpers. Follow its restart instructions; upgrading an older display driver may require running it again. After installation, shut down Windows and enable Automatic display resolution in Machine Settings before starting again. Windows Tools Status confirms the connection. Set Windows display scaling to 200% for Retina. Shared folders selected in Machine Settings appear at \\\\localhost@9843\\DavWWWRoot."
+            box.informativeText = "In Windows, open This PC → MacVM Tools. Right-click Install.cmd and choose Run as administrator. This installs display, network and integration drivers, text clipboard and shared-folder helpers. Use Windows’ Restart command after the final installation step; Shut down does not complete the display transition. If the installer asks you to run it again, do so after restarting, then Restart once more. Finally, shut down Windows and enable Automatic display resolution in Machine Settings before starting again. Windows Tools Status confirms the clipboard connection. Set Windows display scaling to 200% for Retina. Shared folders selected in Machine Settings appear at \\\\localhost@9843\\DavWWWRoot."
             box.addButton(withTitle: "OK"); self.alert = box
             if let window = self.window { box.beginSheetModal(for: window) { [weak self] _ in self?.alert = nil } }
         }

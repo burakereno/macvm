@@ -200,9 +200,13 @@ service, and source-built clipboard/shared-folder helpers. The installer
 verifies file hashes and Microsoft driver signatures. An older
 driver upgrade requires a Windows **Restart**, followed by running the
 installer again. The previous driver is exported before migration and is
-never removed while loaded. Restart after installation, then verify resize
+never removed while loaded. Use Windows' **Restart** command after the final
+successful installation step, including a fresh installation. **Shut down**
+alone can preserve the previous display state through Fast Startup. Restart
+after installation, then verify resize
 and full screen. The service can be removed using the commands in its Read Me.
-For a new VM, shut down after Tools installation, enable **Automatic display
+For a new VM, wait for that final Windows restart to finish, then shut down,
+enable **Automatic display
 resolution** in Machine Settings and start Windows again. The setup/recovery
 display remains available with that option off, even after removing the ISO.
 

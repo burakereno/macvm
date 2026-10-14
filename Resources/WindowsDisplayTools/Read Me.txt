@@ -3,8 +3,11 @@ MacVM Windows Tools for Windows ARM64
 In the VM window choose Virtual Machine > Install Windows Tools. In Windows,
 open the MacVM Tools CD, right-click Install.cmd and Run as administrator.
 The CD installs the ARM64 network/serial drivers, clipboard agent, shared-folder
-helper and matching display driver/service. Restart Windows when it finishes.
-For a new VM, shut down Windows after installation, enable Automatic display
+helper and matching display driver/service. Use Windows' Restart command after
+the FINAL installation step. Shut down alone can retain the previous display
+state through Fast Startup. If asked to run the installer again, do so after
+restarting and then Restart once more after it finishes successfully.
+For a new VM, wait for that restart to finish, then shut down Windows and enable Automatic display
 resolution in MacVM Machine Settings, then start it again. Keep this option off
 before Tools installation or to recover a blank display; no ISO is required
 for the setup/recovery display. Follow the separate restart steps below when

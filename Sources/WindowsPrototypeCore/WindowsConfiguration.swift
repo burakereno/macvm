@@ -46,9 +46,11 @@ public struct WindowsConfiguration: Codable, Equatable, Sendable {
         // Display Tools disables Windows' duplicate Basic Display fallback
         // only after verifying the installed VirtIO driver is healthy.
         let gpu = "virtio-gpu-pci,id=gpu,xres=2560,yres=1600"
-        let displays = (automaticDisplay ?? (installerPath == nil))
-            ? ["-device", gpu, "-device", "ramfb"]
-            : ["-device", "ramfb", "-device", gpu]
+        let automatic = automaticDisplay ?? (installerPath == nil)
+        let framebuffer = "ramfb,id=setup-display"
+        let displays = automatic
+            ? ["-device", gpu, "-device", framebuffer]
+            : ["-device", framebuffer, "-device", gpu]
         // This VM uses PCI VirtIO devices. Exposing the board's 32 empty
         // MMIO transports produces unsupported LNRO0005 devices in Windows.
         var args = ["-name", name, "-L", dataPath ?? URL(fileURLWithPath: firmwarePath).deletingLastPathComponent().path, "-machine", "virt,gic-version=3,virtio-mmio-transports=0,pflash0=firmware,pflash1=efivars", "-accel", "hvf", "-cpu", "host",
@@ -75,7 +77,10 @@ public struct WindowsConfiguration: Codable, Equatable, Sendable {
             args.insert(contentsOf: ["-device", "virtio-net-pci,mac=\(address),romfile="], at: diskIndex)
         }
         if embeddedDisplay {
-            args += ["-vnc", "unix:\(runtime.appendingPathComponent("display.sock").path)"]
+            // Device realization order can differ from argument order. Bind
+            // the viewer to its intended monitor instead of QEMU's default.
+            let monitor = automatic ? "gpu" : "setup-display"
+            args += ["-vnc", "unix:\(runtime.appendingPathComponent("display.sock").path),display=\(monitor)"]
         }
         if audioEnabled == true {
             args += ["-audiodev", "coreaudio,id=audio0", "-device", "intel-hda,id=hda0",
