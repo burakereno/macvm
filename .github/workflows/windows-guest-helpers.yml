@@ -2,20 +2,15 @@ name: Build Windows guest helpers
 on:
   workflow_dispatch:
   workflow_call:
-  push:
-    branches: [codex/windows-completion]
-    paths:
-      - .github/workflows/windows-guest-helpers.yml
-      - scripts/build-windows-guest-helpers.ps1
 permissions:
   contents: read
 concurrency:
-  group: windows-guest-helpers-${{ github.ref }}
+  group: windows-guest-helpers-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   build:
     runs-on: windows-2025
-    timeout-minutes: 180
+    timeout-minutes: 45
     env:
       MACVM_BINARY_CACHE: ${{ github.workspace }}/.build/windows-binary-cache
       MACVM_SOURCE_CACHE: ${{ github.workspace }}/.build/windows-source-cache
@@ -23,7 +18,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      # Reuse only an exact match of the build recipe, verifier and license.
+      # prepare-windows-display-tools.sh verifies hashes, ARM64 and matching sources.
+      - uses: actions/cache@v4
+        id: helpers-cache
+        with:
+          path: |
+            dist/windows-guest-helpers
+            dist/MacVM-Windows-Guest-Sources.zip
+          key: windows-guest-helpers-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-windows-guest-helpers.ps1', 'scripts/verify-windows-guest-helpers.py', 'Resources/WindowsDisplayTools/LICENSE-GPL-2.0.txt') }}
       - uses: actions/cache/restore@v4
+        if: steps.helpers-cache.outputs.cache-hit != 'true'
         id: windows-cache
         with:
           path: |
@@ -33,10 +38,11 @@ jobs:
           restore-keys: |
             windows-arm64-release-e456309-
       - name: Build pinned ARM64 sources
+        if: steps.helpers-cache.outputs.cache-hit != 'true'
         shell: pwsh
         run: ./scripts/build-windows-guest-helpers.ps1
       - uses: actions/cache/save@v4
-        if: always() && steps.windows-cache.outputs.cache-hit != 'true'
+        if: steps.helpers-cache.outputs.cache-hit != 'true' && steps.windows-cache.outputs.cache-hit != 'true'
         with:
           path: |
             .build/windows-binary-cache
@@ -49,3 +55,4 @@ jobs:
             dist/windows-guest-helpers/
             dist/MacVM-Windows-Guest-Sources.zip
           if-no-files-found: error
+          retention-days: 7
